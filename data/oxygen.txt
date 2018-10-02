@@ -1,0 +1,15 @@
+Name	Running_Number	Oxygen_Uptake	Completeness_of_data	Biological_Oxygen_Demand	Kjeldahl_Nitrogen	Total_Solids	Total_Volatile_Solids	Chemical_Oxygen_Demand	Day
+trial100	100	360	1	1	0	1	1	1	0
+trial200	200	79	1	1	1	1	1	1	0
+trial300	300	56	1	1	1	1	1	1	0
+trial400	400	52	1	1	1	1	1	1	0
+trial500	500	23	1	1	0	1	0	1	0
+trial600	600	20	1	1	0	1	1	1	0
+trial700	700	13	1	1	0	1	1	1	0
+trial800	800	10	1	0	0	0	0	0	1
+trial900	900	9	1	0	1	0	0	0	1
+trial1000	1000	8	1	0	1	0	0	0	1
+trial1100	1100	7	1	0	0	0	1	0	1
+trial1200	1200	6	1	0	0	0	0	0	1
+trial1300	1300	4	1	0	1	0	0	0	1
+trial1400	1400	3	1	0	1	0	0	0	1

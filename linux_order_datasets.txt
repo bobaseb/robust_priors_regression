@@ -1,0 +1,4 @@
+['prf.world.txt', 'fish.fertility.txt', 'fuel.world.txt', 'attractiveness.men.txt', 'landrent.world.txt', 'dropout.txt', 'attractiveness.women.txt', 'cloud.txt', 'car.world.txt', 'mortality.txt', 'bodyfat.world.txt', 'homeless.world.txt', 'oxygen.txt', 'ozone.txt', 'mammal.world.txt', 'fat.world.txt', 'glps.txt', 'oxidants.txt', 'cit.world.txt', 'house.world.txt']
+
+
+/media/seb/HD_Numba_Juan/Dropbox/postdoc/LSS_project/20_classic_datasets/tmp_pair_data/ttb_inds.npy holds the order of lookup for predictors in the paired data. Lowest index is 1 because 0 is the Y values.

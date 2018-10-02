@@ -1,0 +1,20 @@
+Day	Running_Number	Oxidant	Completeness_of_data	Wind_speed	Temperature	Humidity	Insolation
+day100	100	25	1	0	1	0	1
+day200	200	24	1	0	1	0	1
+day300	300	23	1	0	1	0	1
+day400	400	21	1	0	0	1	0
+day500	500	20	1	0	1	1	1
+day600	600	18	1	0	0	0	1
+day700	700	17	1	0	1	1	1
+day800	800	16	1	1	1	1	0
+day900	900	15	1	1	1	1	1
+day1000	1000	13	1	1	0	1	0
+day1100	1100	12	1	1	0	1	1
+day1200	1200	11	1	1	1	0	1
+day1300	1300	10	1	1	0	1	0
+day1400	1400	9	1	1	1	0	0
+day1500	1500	7	1	1	0	0	0
+day1600	1600	5	1	1	0	0	0
+day1700	1700	4	1	1	0	1	0
+							
+ 							
