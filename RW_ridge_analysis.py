@@ -55,7 +55,7 @@ all_ttb_inds=[]
 all_qvalis=[]
 for ds_i in range(len(ds_fn_list)):
     pair_df, ttb_inds, qvalis = paired_data(ds_i)
-    pair_df.to_csv(tmp_pair_data_dir + 'pair_' + ds_fn_list[ds_i])
+    pair_df.to_csv(tmp_pair_data_dir + 'pair_' + ds_fn_list[ds_i], index=False)
     all_ttb_inds.append(ttb_inds)
     all_qvalis.append(qvalis)
 
