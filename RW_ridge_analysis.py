@@ -14,7 +14,7 @@ def q_validities(pair_df):
         cue_valies.append(cue_vali)
     return np.array(cue_valies)
 
-def paired_data(ds_i):
+def paired_data(ds_i, flip_direction=0):
     tmp0 = pd.read_csv(data_dir + ds_fn_list[ds_i], sep="\s+|\t+")
     tmp = tmp0.reindex(np.random.permutation(tmp0.index))
     #tmp = tmp.drop(range(len(tmp)-5))
@@ -36,10 +36,11 @@ def paired_data(ds_i):
             pair_df.iloc[n,1:] = pair_x
             n += 1
         i += 1
-    chng_q_valis = q_validities(pair_df)<0.5
-    for col in range(1,pair_df.shape[1]):
-        if chng_q_valis[col-1]:
-            pair_df.iloc[:,col] = pair_df.iloc[:,col]*-1
+    if flip_direction==1:
+        chng_q_valis = q_validities(pair_df)<0.5
+        for col in range(1,pair_df.shape[1]):
+            if chng_q_valis[col-1]:
+                pair_df.iloc[:,col] = pair_df.iloc[:,col]*-1
     qvalis = q_validities(pair_df)
     ttb_inds = np.argsort(qvalis)+1
     ttb_inds = ttb_inds[::-1]
@@ -55,6 +56,7 @@ all_ttb_inds=[]
 all_qvalis=[]
 for ds_i in range(len(ds_fn_list)):
     pair_df, ttb_inds, qvalis = paired_data(ds_i)
+    print qvalis
     pair_df.to_csv(tmp_pair_data_dir + 'pair_' + ds_fn_list[ds_i], index=False)
     all_ttb_inds.append(ttb_inds)
     all_qvalis.append(qvalis)
