@@ -65,10 +65,12 @@ def tallying(ds_tmp, tally_dirs):
     ds = ds_tmp.copy()
     if tally_dirs.size==0:
         chng_tdirs = q_validities(ds)<0.5
+        #chng_tdirs = np.array([0,0,1])
         print 'tally qvals: ', q_validities(ds)
         tally_dirs = np.ones((ds.shape[1]-1,))
         tally_dirs[chng_tdirs] = -1
-        #print chng_tdirs
+        tally_dirs = np.array([1,1,-1])
+        #print tally_dirs; exit()
     else:
         chng_tdirs = (tally_dirs*-1)+1
         #print tally_dirs, chng_tdirs; exit()
@@ -88,7 +90,7 @@ def tallying(ds_tmp, tally_dirs):
     #scaling_prior2(ds.iloc[:,0], ds.iloc[:,1:], 1); #exit()
     tally_dirs = tally_dirs*scaling
     #print ds.iloc[:,0]; exit()
-    tally_up = replace_zeros(tally_up)
+    #tally_up = replace_zeros(tally_up)
     tally_preds = np.sign(tally_up) #/np.abs(tally_up)
     return tally_preds, tally_dirs
 
@@ -141,7 +143,7 @@ def ttbing(ds_tmp, ttb_inds, qvalis, flippers):
         msk = ttb_preds!=0
         x_i[msk] = 0
         ttb_preds += x_i
-    ttb_preds = replace_zeros(ttb_preds)
+    #ttb_preds = replace_zeros(ttb_preds)
     return ttb_preds, ttb_inds
 
 def compute_ttb_prior0(ttb_inds,flippers):
@@ -177,13 +179,10 @@ def run_ridges(X_train,X_train_ttb,Y_train,X_test,X_test_ttb,Y_test,lam_bda,ttb_
     #Y_ttbR_preds = np.sign(np.dot(X_test_ttb,B_ridge_ttb))
     Y_ttbR_preds = np.sign(np.dot(X_test,B_ridge_ttb))
     Y_tallyR_preds = np.sign(np.dot(X_test,B_ridge_tally))
-    #Y_normalR_preds = replace_zeros(Y_normalR_preds)
-    #Y_tallyR_preds = replace_zeros(Y_tallyR_preds)
-    #Y_ttbR_preds = replace_zeros(Y_ttbR_preds)
     #print B_ridge_normal
     #print B_ridge_ttb
+    print B_ridge_tally
     #print B_ridge_tally, B_ridge_normal; exit()
-    #Y_tallyR_preds = np.sign(np.dot(X_i,tally_prior))
     normalR_acc = get_acc(Y_test,Y_normalR_preds)
     ttbR_acc = get_acc(Y_test,Y_ttbR_preds)
     tallyR_acc = get_acc(Y_test,Y_tallyR_preds)
@@ -195,8 +194,7 @@ def regress(X_train,Y_train,X_test,Y_test):
     Xt_i = np.transpose(X_i)
     B_OLS = np.dot(np.linalg.pinv(np.dot(Xt_i,X_i)),np.dot(Xt_i,Y_train))
     Y_OLS_preds = np.sign(np.dot(X_test,B_OLS))
-    Y_OLS_preds = replace_zeros(Y_OLS_preds)
-    #OLS_acc = np.sum(Y_OLS_preds==Y_test)/float(len(Y_OLS_preds))
+    #Y_OLS_preds = replace_zeros(Y_OLS_preds)
     OLS_acc = get_acc(Y_test,Y_OLS_preds)
     return OLS_acc
 
@@ -207,10 +205,11 @@ testing = 1
 v = 0
 #niters = 20 #average over variability in tallying and ttbing
 niters_total = 1
-lambda_list = np.linspace(0,100000,num=25)
+sigma = 3
+lambda_list = np.linspace(0,1000,num=25)
 #print lambda_list; exit()
-#parent_dir = '/media/seb/HD_Numba_Juan/Dropbox/postdoc/LSS_project/20_classic_datasets/'
-parent_dir = '/home/seb/Dropbox/postdoc/LSS_project/20_classic_datasets/'
+parent_dir = '/media/seb/HD_Numba_Juan/Dropbox/postdoc/LSS_project/20_classic_datasets/'
+#parent_dir = '/home/seb/Dropbox/postdoc/LSS_project/20_classic_datasets/'
 #parent_dir = os.getcwd() + '/'
 data_dir = parent_dir + 'data/'
 tmp_pair_data_dir = parent_dir + 'tmp_pair_data/'
@@ -247,7 +246,11 @@ def main(ds_fn_list,v=0):
             print ds_fn_list[ds_num]
         if ds_fn_list[ds_num] == test_fn:
             tmp0 = pd.read_csv(parent_dir + test_fn, sep=",")
-            #tmp0 = pd.DataFrame(np.tile(tmp0, (20,1)))
+            tmp0.iloc[:,1] = tmp0.iloc[:,1]*2
+            tmp0.iloc[:,0] = np.sum(tmp0.iloc[:,1:3],axis=1) + (tmp0.iloc[:,3]*-1)
+            tmp0 = pd.DataFrame(np.tile(tmp0, (20,1)))
+            tmp0.iloc[:,0] += np.random.normal(0,sigma,size=tmp0.iloc[:,0].shape)
+            tmp0.iloc[:,0] = np.sign(tmp0.iloc[:,0])
             #print tmp0; exit()
         else:
             tmp0 = pd.read_csv(tmp_pair_data_dir + 'pair_' + ds_fn_list[ds_num], sep=",")
@@ -275,22 +278,12 @@ def main(ds_fn_list,v=0):
             _, tally_prior = tallying(train_set,np.array([])) #if prior not calculated yet, send empty array
             #if ds_fn_list[ds_num] == test_fn:
                 #tally_prior = np.array([1,1,-1]) #use only when testing!
-            #tally_acc=[]
-            #for t in range(niters):
             tally_preds, _ = tallying(test_set,np.sign(tally_prior))
-            #tally_acc_tmp = np.sum(tally_preds==Y_test)/float(len(tally_preds))
             tally_acc = get_acc(Y_test,tally_preds)
-            #    tally_acc.append(tally_acc_tmp)
-            #tally_acc = np.median(tally_acc)
             tally_accs.append(tally_acc)
             _,ttb_inds,qvalis,flippers = compute_qvalis(train_set, flip_direction=1)
-            #ttb_acc=[]
-            #for t in range(niters):
             ttb_preds, _ = ttbing(test_set,ttb_inds,qvalis,flippers)
             ttb_acc = get_acc(Y_test,ttb_preds)
-            #    ttb_acc_tmp = np.sum(ttb_preds==Y_test)/float(len(ttb_preds))
-            #    ttb_acc.append(ttb_acc_tmp)
-            #ttb_acc = np.median(ttb_acc)
             ttb_accs.append(ttb_acc)
             ttb_prior0 = compute_ttb_prior0(ttb_inds,flippers)
             ttb_prior0 = ttb_prior0.reshape((ttb_prior0.shape + (1,)))
@@ -306,15 +299,7 @@ def main(ds_fn_list,v=0):
             #print ttb_prior, tally_prior; exit()
             cv_accs=[]
             for lam_bda in lambda_list:
-                #normalR_acc=[]
-                #ttbR_acc=[]
-                #tallyR_acc=[]
-                #for t in range(niters):
                 normalR_acc, ttbR_acc, tallyR_acc = run_ridges(X_train,X_train_ttb,Y_train,X_test,X_test_ttb,Y_test,lam_bda,ttb_prior,tally_prior)
-                #    normalR_acc.append(normalR_acc_tmp)
-                #    ttbR_acc.append(ttbR_acc_tmp)
-                #    tallyR_acc.append(tallyR_acc_tmp)
-                #cv_accs.append([np.mean(normalR_acc), np.mean(ttbR_acc), np.mean(tallyR_acc)])
                 cv_accs.append([normalR_acc, ttbR_acc, tallyR_acc])
             all_accs.append(cv_accs)
             #print 'tally_prior: ', tally_prior
