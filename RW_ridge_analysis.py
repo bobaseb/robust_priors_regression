@@ -20,7 +20,7 @@ def paired_data(ds_i, flip_direction=0):
     #tmp = tmp.drop(range(len(tmp)-5))
     y_tmp = tmp.iloc[:,2]
     x_tmp = tmp.iloc[:,4:]
-    num_pairs = len(y_tmp)*(len(y_tmp)-1)/2
+    num_pairs = len(y_tmp)*(len(y_tmp)-1) #/2
     ph_array = np.zeros((num_pairs,x_tmp.shape[1]+1))
     ph_array.fill(np.nan)
     pair_df_header = np.hstack([y_tmp.name,x_tmp.columns.values])
@@ -32,6 +32,12 @@ def paired_data(ds_i, flip_direction=0):
         for j in range(i+1,i+1+num_y_j):
             pair_y = (y_i - y_tmp.iloc[j])/np.abs(y_i - y_tmp.iloc[j])
             pair_x = x_tmp.iloc[i,:] - x_tmp.iloc[j,:]
+            pair_df.iloc[n,0] = pair_y
+            pair_df.iloc[n,1:] = pair_x
+            n += 1
+            #let's switch directions now
+            pair_y = (y_tmp.iloc[j] - y_i)/np.abs(y_tmp.iloc[j] - y_i)
+            pair_x = x_tmp.iloc[j,:] - x_tmp.iloc[i,:]
             pair_df.iloc[n,0] = pair_y
             pair_df.iloc[n,1:] = pair_x
             n += 1
@@ -56,7 +62,10 @@ all_ttb_inds=[]
 all_qvalis=[]
 for ds_i in range(len(ds_fn_list)):
     pair_df, ttb_inds, qvalis = paired_data(ds_i)
-    print qvalis
+    print(qvalis)
+    print(pair_df.shape)
+    #print(pair_df.iloc[:,0].mean())
+    #exit()
     pair_df.to_csv(tmp_pair_data_dir + 'pair_' + ds_fn_list[ds_i], index=False)
     all_ttb_inds.append(ttb_inds)
     all_qvalis.append(qvalis)
