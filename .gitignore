@@ -5,9 +5,10 @@
 !*/
 
 # or scripts
-*.sh
-*.m
-*.py
+!*.sh
+!*.m
+!*.py
+!*.r
 
 # But not these files...
 !.gitignore
