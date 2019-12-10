@@ -1,3 +1,13 @@
-*.pdf
-*.npy
-*.png
+# Ignore everything
+*
+
+# but not directories
+!*/
+
+# or scripts
+*.sh
+*.m
+*.py
+
+# But not these files...
+!.gitignore

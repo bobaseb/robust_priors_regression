@@ -2,12 +2,13 @@ import numpy as np
 import os
 import pandas as pd
 import random
-from scipy.optimize import minimize_scalar
+from scipy.optimize import minimize_scalar, minimize
 from scipy import stats
 import matplotlib.pyplot as plt
 import time
 import cProfile
 import pickle
+import time
 
 def q_validities(pair_df):
     cue_valies=[]
@@ -139,7 +140,7 @@ def compute_ttb_prior0(ttb_inds,flippers):
     ttb_prior = ttb_prior*flippers
     return ttb_prior
 
-def run_ridges(X_train,X_train_ttb,Y_train,X_test,X_test_ttb,Y_test,lam_bda,ttb_prior,tally_prior):
+def run_ridges(X_train,X_train_ttb,Y_train,X_test,X_test_ttb,Y_test,lam_bda,ttb_prior,tally_prior,optim_lambda=0):
     intercept=0
     if intercept==1:
         X_i = np.hstack([np.ones((X_train.shape[0],1)), X_train])
@@ -156,23 +157,18 @@ def run_ridges(X_train,X_train_ttb,Y_train,X_test,X_test_ttb,Y_test,lam_bda,ttb_
         lambda_mat = lam_bda*np.eye(X_i.shape[1])
     Xt_i = np.transpose(X_i)
     Xt_i_ttb = np.transpose(X_i_ttb)
-    #B_ridge_normal = np.dot(np.linalg.pinv(np.dot(Xt_i,X_i) + lambda_mat),np.dot(Xt_i,Y_train))
-    #B_ridge_ttb = np.dot(np.linalg.pinv(np.dot(Xt_i_ttb,X_i_ttb) + lambda_mat),(np.dot(Xt_i_ttb,Y_train) + lam_bda*ttb_prior))
-    #B_ridge_tally = np.dot(np.linalg.pinv(np.dot(Xt_i,X_i) + lambda_mat),(np.dot(Xt_i,Y_train) + lam_bda*tally_prior))
-    B_logR_tally, log_tally_acc, log_tally_preds = log_regress_p(X_i,X_test,Y_train,Y_test,lam_bda,tally_prior)
-    B_logR_normal, log_normal_acc, log_normal_preds = log_regress_p(X_i,X_test,Y_train,Y_test,lam_bda,np.zeros((len(ttb_prior),)))
-    B_logR_ttb, log_ttb_acc, log_ttb_preds = log_regress_p(X_i_ttb,X_test_ttb,Y_train,Y_test,lam_bda,ttb_prior)
-    all_preds = [log_tally_preds, log_normal_preds, log_ttb_preds]
-    #print(lam_bda,log_tally_acc,log_normal_acc,log_ttb_acc)
-    #exit()
-    #print(B_logR_normal,B_logR_ttb,B_logR_tally)
-    #Y_normalR_preds = np.sign(np.dot(X_test,B_ridge_normal))
-    #Y_ttbR_preds = np.sign(np.dot(X_test_ttb,B_ridge_ttb))
-    #Y_tallyR_preds = np.sign(np.dot(X_test,B_ridge_tally))
-    #normalR_acc = get_acc(Y_test,Y_normalR_preds)
-    #ttbR_acc = get_acc(Y_test,Y_ttbR_preds)
-    #tallyR_acc = get_acc(Y_test,Y_tallyR_preds)
-    return log_normal_acc, log_ttb_acc, log_tally_acc, all_preds
+    if optim_lambda==0:
+        B_logR_tally, log_tally_acc, log_tally_preds = log_regress_p(X_i,X_test,Y_train,Y_test,lam_bda,tally_prior)
+        B_logR_normal, log_normal_acc, log_normal_preds = log_regress_p(X_i,X_test,Y_train,Y_test,lam_bda,np.zeros((len(ttb_prior),)))
+        B_logR_ttb, log_ttb_acc, log_ttb_preds = log_regress_p(X_i_ttb,X_test_ttb,Y_train,Y_test,lam_bda,ttb_prior)
+        all_preds = [log_tally_preds, log_normal_preds, log_ttb_preds]
+        return log_normal_acc, log_ttb_acc, log_tally_acc, all_preds
+    elif optim_lambda=='TAL':
+        _, log_tally_acc, _ = log_regress_p(X_i,X_test,Y_train,Y_test,lam_bda,tally_prior)
+        return log_tally_acc
+    elif optim_lambda=='TTB':
+        _, log_ttb_acc, _ = log_regress_p(X_i_ttb,X_test_ttb,Y_train,Y_test,lam_bda,ttb_prior)
+        return log_ttb_acc
 
 def sigmoid(x):
     #"Numerically stable sigmoid function."
@@ -266,9 +262,9 @@ def log_regress_p(X_train,X_test,Y_train,Y_test,lam_bda,beta_zero):
         #print(beta_old)
         #time.sleep(0.1)
         if np.mean(np.abs(beta_old))>10:
-            print('big betas, perfect separation probable')
+            #print('big betas, perfect separation probable')
             break
-    print('ginv2')
+    #print('ginv2')
     pred_probs, _ = g_inv(X_test,beta_new)
     #print('ginv3')
     preds = np.array(pred_probs>0.5,dtype=int)
@@ -318,9 +314,9 @@ def log_regress(X_train,X_test,Y_train,Y_test):
         #time.sleep(0.5)
         #beta_test = beta_thresh(beta_new)
         if np.mean(np.abs(beta_old))>10:
-            print('big betas, perfect separation probable')
+            #print('big betas, perfect separation probable')
             break
-    print('ginv_b')
+    #print('ginv_b')
     pred_probs, _ = g_inv(X_test,beta_new)
     #print('ginv_c')
     preds = np.array(pred_probs>0.5,dtype=int)
@@ -376,15 +372,17 @@ def sim_data():
 rnd_seed = 666 #101
 np.random.seed(rnd_seed)
 random.seed(rnd_seed)
-testing = -1 #-1 #1,-1,0,2
+testing = 0# -1 #-1 #1,-1,0,2
 remove_zeros = 0
 v = 0
-niters_total = 1000
+niters_total = 100 #1000
+optim_lambda = 'TTB' # 'TTB' # 0 # needs to be 0 to avoid optimization
 sample_size = 10
 sigma = 1.3
 #lambda_list = np.linspace(0.0001,0.1,num=50) #1000000000000 to converge
 #lambda_list = np.hstack([0, np.geomspace(1,1000,num=50)]) #1000000000000 = 1e+12 to converge
-lambda_list = np.hstack([0, np.linspace(0.00001,0.1,num=25), np.linspace(0.1,1000,num=20), np.geomspace(1000,1000000,num=5), np.geomspace(1000000,1000000000000,num=5)])
+lambda_list = np.hstack([0, np.linspace(0.00001,0.1,num=5), np.linspace(0.1,1,num=5), np.linspace(1,10,num=5), np.linspace(10,100,num=5), np.linspace(100,1000,num=5),
+    np.geomspace(1000,1000000,num=5), np.geomspace(1000000,1000000000000,num=5)])
 parent_dir = '/media/seb/HD_Numba_Juan/Dropbox/postdoc/LSS_project/20_classic_datasets/'
 #parent_dir = '/home/seb/Dropbox/postdoc/LSS_project/20_classic_datasets/'
 #parent_dir = os.getcwd() + '/'
@@ -545,10 +543,6 @@ def main(niter, ds_fn_list,v=0):
             f = minimize_scalar(lambda B: scaling_prior_log(Y_train, X_train_ttb, B),
             method='golden', options={'maxiter': 10000})
             ttb_prior = np.tile(f.x,X_train.shape[1]) #after ttbing X, we need a scaling prior
-            #if ds_fn_list[ds_num] == test_fn:
-                #ttb_prior = np.array([4,2,-1]) #use only when testing!
-            #print(ttb_prior, tally_prior); exit()
-            #ols_acc = regress(X_train,Y_train,X_test,Y_test)
             log_ols_acc, log_ols_preds = log_regress(X_train,X_test,Y_train,Y_test)
             ols_accs.append(log_ols_acc)
             cv_accs=[]
@@ -582,6 +576,156 @@ def main(niter, ds_fn_list,v=0):
         all_ds_agreements.append(np.array(all_agreements))
         #exit()
     return all_ols_accs, all_ttb_accs, all_tally_accs, all_ds_accs, all_ds_agreements
+
+def main_optim(mid_ind, lam_bda, optim_lambda, ds_num, niter):
+    all_ds_accs=[]
+    all_ds_agreements=[]
+    all_ols_accs=[]
+    all_ttb_accs=[]
+    all_tally_accs=[]
+    if ds_fn_list[ds_num] == test_fn:
+        tmp0 = pd.read_csv(parent_dir + test_fn, sep=",")
+        tmp0.iloc[:,0] = np.sum(tmp0.iloc[:,1:3],axis=1) + (tmp0.iloc[:,3]*-1)
+        tmp0 = pd.DataFrame(np.tile(tmp0, (20,1)))
+        tmp0.iloc[:,0] += np.random.normal(0,sigma,size=tmp0.iloc[:,0].shape)
+        tmp0.iloc[:,0] = np.sign(tmp0.iloc[:,0])
+    elif ds_fn_list[ds_num] == ml_case:
+        tmp0 = pd.read_csv(tmp_pair_data_dir + ds_fn_list[ds_num], header=None, sep=",", usecols=range(1,11))
+        cols = [10,1,2,3,4,5,6,7,8,9]
+        tmp0 = tmp0[cols]
+        tmp_y = tmp0.iloc[:,0]
+        tmp_y[tmp_y==2] = 1
+        tmp_y[tmp_y==4] = -1
+        tmp0.iloc[:,0] = tmp_y
+        for col in range(1,len(cols)):
+            tmp_x = np.array(tmp0.iloc[:,col])
+            bad_rows = np.where(tmp_x=='?')
+            if bad_rows[0].size>0:
+                tmp0.drop(list(bad_rows[0]), inplace=True)
+        for col in range(1,len(cols)):
+            tmp_x = np.array(tmp0.iloc[:,col], dtype=int)
+            tmp_median = np.median(tmp_x)
+            tmp_x[tmp_x<tmp_median] = -1
+            tmp_x[tmp_x==tmp_median] = 0
+            tmp_x[tmp_x>tmp_median] = 1
+            #tmp_x = stats.zscore(tmp_x)
+            tmp0.iloc[:,col] = tmp_x
+    elif ds_fn_list[ds_num] == 'simulation':
+        Y_test, Y_train, X_test, X_train = sim_data()
+    else:
+        tmp0 = pd.read_csv(tmp_pair_data_dir + 'pair_' + ds_fn_list[ds_num], sep=",")
+    if ds_fn_list[ds_num] != 'simulation':
+        tmp0 = tmp0.reindex(np.random.permutation(tmp0.index))
+        if ds_fn_list[ds_num] == ml_case:
+            tmp0_dels = np.sum(tmp0.iloc[:,0]==1) - np.sum(tmp0.iloc[:,0]==-1)
+            tmp0_bool = tmp0.iloc[:,0]==1
+            tmp0_bool_inds = np.where(tmp0_bool)
+            tmp0_bool_inds = tmp0_bool_inds[0][0:tmp0_dels]
+            tmp0.drop(tmp0.index[list(tmp0_bool_inds)], inplace=True)
+        all_accs=[]
+        all_agreements=[]
+        tally_accs=[]
+        ttb_accs=[]
+        ols_accs=[]
+        for cv in range(1):
+            if ds_fn_list[ds_num] != 'simulation':
+                if cv==0:
+                    train_set = tmp0.iloc[:mid_ind]
+                    test_set = tmp0.iloc[mid_ind:]
+                elif cv==1:
+                    test_set = tmp0.iloc[:mid_ind]
+                    train_set = tmp0.iloc[mid_ind:]
+                Y_test = test_set.iloc[:,0]
+                Y_train = train_set.iloc[:,0]
+                X_test = test_set.iloc[:,1:]
+                X_train = train_set.iloc[:,1:]
+            else:
+                train_set = np.hstack([Y_train.reshape((len(Y_train),1)),X_train])
+                train_set = pd.DataFrame(train_set)
+                test_set = np.hstack([Y_test.reshape((len(Y_test),1)),X_test])
+                test_set = pd.DataFrame(test_set)
+            global beta_start
+            beta_start = np.random.normal(0,0.1,size=X_train.shape[1])
+            log_ols_acc, _ = log_regress(X_train,X_test,Y_train,Y_test)
+            if optim_lambda=='TAL':
+                _, tally_prior = tallying(train_set,np.array([])) #if prior not calculated yet, send empty array
+                tally_preds, _ = tallying(test_set,np.sign(tally_prior))
+                if remove_zeros==1:
+                    remove_zeros_msk = np.array(tally_preds!=0, dtype=bool)
+                    tally_preds = tally_preds[remove_zeros_msk]
+                    Y_test = Y_test.iloc[remove_zeros_msk]
+                    Y_train = Y_train.iloc[remove_zeros_msk]
+                    X_test = X_test.iloc[remove_zeros_msk,:]
+                    X_train = X_train.iloc[remove_zeros_msk,:]
+                    test_set = test_set.iloc[remove_zeros_msk,:]
+                    train_set = train_set.iloc[remove_zeros_msk,:]
+                tally_acc = get_acc(Y_test,tally_preds)
+                ref_acc = tally_acc
+                acc_optim = run_ridges(X_train,X_train,Y_train,X_test,X_test,Y_test,lam_bda,tally_prior,tally_prior,optim_lambda=optim_lambda)
+            elif optim_lambda=='TTB':
+                _,ttb_inds,qvalis,flippers = compute_qvalis(train_set, flip_direction=1)
+                ttb_preds, _ = ttbing(test_set,ttb_inds,qvalis,flippers)
+                ttb_acc = get_acc(Y_test,ttb_preds)
+                ref_acc = ttb_acc
+                ttb_prior0 = compute_ttb_prior0(ttb_inds,flippers)
+                ttb_prior0 = ttb_prior0.reshape((ttb_prior0.shape + (1,)))
+                ttb_prior0_train = np.tile(ttb_prior0,X_train.shape[0]).T
+                ttb_prior0_test = np.tile(ttb_prior0,X_test.shape[0]).T
+                X_train_ttb = (ttb_prior0_train*X_train)/np.max(np.abs(ttb_prior0_train))
+                X_test_ttb = (ttb_prior0_test*X_test)/np.max(np.abs(ttb_prior0_train))
+                f = minimize_scalar(lambda B: scaling_prior_log(Y_train, X_train_ttb, B),
+                method='golden', options={'maxiter': 10000})
+                ttb_prior = np.tile(f.x,X_train.shape[1]) #after ttbing X, we need a scaling prior
+                acc_optim = run_ridges(X_train,X_train_ttb,Y_train,X_test,X_test_ttb,Y_test,lam_bda,ttb_prior,ttb_prior,optim_lambda=optim_lambda)
+            #acc_diff = acc_optim - ref_acc
+    return acc_optim, ref_acc, log_ols_acc
+
+def main_optim_wrapper(params, optim_lambda, niters_total,ds_num):
+    #np.random.seed(rnd_seed+1)
+    #random.seed(rnd_seed+1)
+    mid_ind, lam_bda = params
+    #print(params)
+    mid_ind = int(np.round(mid_ind))
+    total_acc_optim=[]
+    total_ref_acc=[]
+    total_ols_accs=[]
+    for niter in range(niters_total):
+        acc_optim, ref_acc, log_ols_acc = main_optim(mid_ind, lam_bda, optim_lambda, ds_num, niter)
+        total_acc_optim.append(acc_optim)
+        total_ref_acc.append(ref_acc)
+        total_ols_accs.append(log_ols_acc)
+    ols_mn = np.mean(total_ols_accs)
+    heur_mn = np.mean(total_ref_acc)
+    optim_mn = np.mean(total_acc_optim)
+    print('ols: ',ols_mn, optim_lambda, heur_mn, 'optim: ', optim_mn, params)
+    #np.random.seed(int(np.round(time.time())))
+    #random.seed(int(np.round(time.time())))
+    if ols_mn > heur_mn and ols_mn > optim_mn:
+        mn_acc_diff = mid_ind/10 + np.random.randn(1)/10
+    elif ols_mn > heur_mn and ols_mn < optim_mn:
+        mn_acc_diff = ols_mn - optim_mn
+    else:
+        mn_acc_diff = heur_mn - optim_mn #+ np.random.randn(1)/10000
+    print('mn_acc_diff: ', mn_acc_diff)
+    return mn_acc_diff
+
+if optim_lambda!=0:
+    all_f=[]
+    for ds_num in range(len(ds_fn_list)):
+        print(ds_fn_list[ds_num], ds_num)
+        tmp00 = pd.read_csv(tmp_pair_data_dir + 'pair_' + ds_fn_list[ds_num], sep=",")
+        bnd = tmp00.shape[0]-10
+        if bnd > 1000:
+            bnd = 1000
+        bnds = ((9, bnd), (0, None))
+        f = minimize(main_optim_wrapper, (12, 1), args=(optim_lambda, niters_total,ds_num),
+        method='SLSQP', options={'ftol': 1e-03, 'disp': True, 'maxiter': 100},bounds=bnds)
+        all_f.append(f)
+        print(f)
+    pickle.dump( all_f, open( parent_dir + 'f_' + optim_lambda, "wb" ) )
+    exit()
+
+#TAL<- 0: (16,1), 1: (x,x), 2: (18,1533), 3: (17, 103768), 4: (9, 0.2), 5: (12, 1), 6: (12, 1), 7: (12, 1), 8: (12, 1), 9: ()
 
 def parallelizer(niters_total,ds_fn_list,v):
     total_ols_accs=[]
@@ -680,3 +824,10 @@ else:
 #np.save(parent_dir + 'breast_cancer_115n_1000iters',all_data)
 pickle.dump( total_data, open( parent_dir + sv_fn, "wb" ) )
 #total_data_load = pickle.load( open( parent_dir + 'breast_cancer_115n_1000iters', "rb" ) )
+
+'''
+f_TAL = pickle.load( open( '/media/seb/HD_Numba_Juan/Dropbox/postdoc/LSS_project/20_classic_datasets/f_TAL', "rb" ) )
+f_TTB = pickle.load( open( '/media/seb/HD_Numba_Juan/Dropbox/postdoc/LSS_project/20_classic_datasets/f_TTB', "rb" ) )
+f_Txx = f_TTB # f_TAL #
+for funs in f_Txx:
+    print(funs.fun, funs.x)
