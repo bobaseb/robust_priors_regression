@@ -369,21 +369,28 @@ def sim_data():
     y_test = np.sign(np.dot(test_set,betas.T) + test_e)
     return y_test, y_train, test_set, train_pairs
 
-rnd_seed = 666 #101
+rnd_seed = 333 #666 #101
 np.random.seed(rnd_seed)
 random.seed(rnd_seed)
-testing = 0# -1 #-1 #1,-1,0,2
+testing = -1 #0# -1 #1,-1,0,2
 remove_zeros = 0
 v = 0
-niters_total = 100 #1000
-optim_lambda = 'TTB' # 'TTB' # 0 # needs to be 0 to avoid optimization
-sample_size = 10
+niters_total = 1000 # 1000 #
+optim_lambda = 0 #'TAL' #'TTB' #   needs to be 0 to avoid optimization
+sample_size = 100
 sigma = 1.3
 #lambda_list = np.linspace(0.0001,0.1,num=50) #1000000000000 to converge
 #lambda_list = np.hstack([0, np.geomspace(1,1000,num=50)]) #1000000000000 = 1e+12 to converge
 lambda_list = np.hstack([0, np.linspace(0.00001,0.1,num=5), np.linspace(0.1,1,num=5), np.linspace(1,10,num=5), np.linspace(10,100,num=5), np.linspace(100,1000,num=5),
     np.geomspace(1000,1000000,num=5), np.geomspace(1000000,1000000000000,num=5)])
-parent_dir = '/media/seb/HD_Numba_Juan/Dropbox/postdoc/LSS_project/20_classic_datasets/'
+
+wfh = 1
+if wfh ==1:
+    pwd = '/home/seb/Dropbox/postdoc/LSS_project'
+else:
+    pwd = '/media/seb/HD_Numba_Juan/Dropbox/postdoc/LSS_project'
+
+parent_dir = pwd + '/20_classic_datasets/'
 #parent_dir = '/home/seb/Dropbox/postdoc/LSS_project/20_classic_datasets/'
 #parent_dir = os.getcwd() + '/'
 data_dir = parent_dir + 'data/'
@@ -423,6 +430,17 @@ paired_ds_list = ['pair_attractiveness.men.txt', 'pair_dropout.txt', 'pair_cloud
  'pair_prf.world.txt', 'pair_fuel.world.txt', 'pair_fish.fertility.txt', 'pair_fat.world.txt']
 '''
 
+def medianize(tmp0,cols):
+    for col in range(1,len(cols)):
+        tmp_x = np.array(tmp0.iloc[:,col], dtype=int)
+        tmp_median = np.median(tmp_x)
+        tmp_x[tmp_x<tmp_median] = -1
+        tmp_x[tmp_x==tmp_median] = 0
+        tmp_x[tmp_x>tmp_median] = 1
+        #tmp_x = stats.zscore(tmp_x)
+        tmp0.iloc[:,col] = tmp_x
+    return tmp0
+
 beta_start = 0
 
 def main(niter, ds_fn_list,v=0):
@@ -458,14 +476,8 @@ def main(niter, ds_fn_list,v=0):
                 bad_rows = np.where(tmp_x=='?')
                 if bad_rows[0].size>0:
                     tmp0.drop(list(bad_rows[0]), inplace=True)
-            for col in range(1,len(cols)):
-                tmp_x = np.array(tmp0.iloc[:,col], dtype=int)
-                tmp_median = np.median(tmp_x)
-                tmp_x[tmp_x<tmp_median] = -1
-                tmp_x[tmp_x==tmp_median] = 0
-                tmp_x[tmp_x>tmp_median] = 1
-                #tmp_x = stats.zscore(tmp_x)
-                tmp0.iloc[:,col] = tmp_x
+            tmp0 = medianize(tmp0,cols)
+            tmp0 = tmp0.astype(float)
         elif ds_fn_list[ds_num] == 'simulation':
             Y_test, Y_train, X_test, X_train = sim_data()
         else:
@@ -474,15 +486,17 @@ def main(niter, ds_fn_list,v=0):
                 #tmp0 = pd.DataFrame(np.tile(tmp0, (3,1)))
         if ds_fn_list[ds_num] != 'simulation':
             tmp0 = tmp0.reindex(np.random.permutation(tmp0.index))
-            if ds_fn_list[ds_num] == ml_case:
+            if ds_fn_list[ds_num] == ml_case: #balance classes +1/-1
                 tmp0_dels = np.sum(tmp0.iloc[:,0]==1) - np.sum(tmp0.iloc[:,0]==-1)
                 tmp0_bool = tmp0.iloc[:,0]==1
                 tmp0_bool_inds = np.where(tmp0_bool)
                 tmp0_bool_inds = tmp0_bool_inds[0][0:tmp0_dels]
                 tmp0.drop(tmp0.index[list(tmp0_bool_inds)], inplace=True)
+                tmp0 = tmp0.reindex(np.random.permutation(tmp0.index))
         #print(tmp0.mean(axis=0))#;exit()
         #mid_ind = int(tmp0.shape[0]*0.5)
         #print(mid_ind)
+        print(tmp0.head())
         mid_ind=sample_size
         all_accs=[]
         all_agreements=[]
@@ -602,14 +616,16 @@ def main_optim(mid_ind, lam_bda, optim_lambda, ds_num, niter):
             bad_rows = np.where(tmp_x=='?')
             if bad_rows[0].size>0:
                 tmp0.drop(list(bad_rows[0]), inplace=True)
-        for col in range(1,len(cols)):
-            tmp_x = np.array(tmp0.iloc[:,col], dtype=int)
-            tmp_median = np.median(tmp_x)
-            tmp_x[tmp_x<tmp_median] = -1
-            tmp_x[tmp_x==tmp_median] = 0
-            tmp_x[tmp_x>tmp_median] = 1
-            #tmp_x = stats.zscore(tmp_x)
-            tmp0.iloc[:,col] = tmp_x
+        #for col in range(1,len(cols)):
+        #    tmp_x = np.array(tmp0.iloc[:,col], dtype=int)
+        #    tmp_median = np.median(tmp_x)
+        #    tmp_x[tmp_x<tmp_median] = -1
+        #    tmp_x[tmp_x==tmp_median] = 0
+        #    tmp_x[tmp_x>tmp_median] = 1
+        #    #tmp_x = stats.zscore(tmp_x)
+        #    tmp0.iloc[:,col] = tmp_x
+        tmp0 = medianize(tmp0,cols)
+        tmp0 = tmp0.astype(float)
     elif ds_fn_list[ds_num] == 'simulation':
         Y_test, Y_train, X_test, X_train = sim_data()
     else:
@@ -622,6 +638,7 @@ def main_optim(mid_ind, lam_bda, optim_lambda, ds_num, niter):
             tmp0_bool_inds = np.where(tmp0_bool)
             tmp0_bool_inds = tmp0_bool_inds[0][0:tmp0_dels]
             tmp0.drop(tmp0.index[list(tmp0_bool_inds)], inplace=True)
+            tmp0 = tmp0.reindex(np.random.permutation(tmp0.index))
         all_accs=[]
         all_agreements=[]
         tally_accs=[]
@@ -711,9 +728,10 @@ def main_optim_wrapper(params, optim_lambda, niters_total,ds_num):
 
 if optim_lambda!=0:
     all_f=[]
-    for ds_num in range(len(ds_fn_list)):
+    if ds_fn_list[0] == ml_case:
+        ds_num = 0
         print(ds_fn_list[ds_num], ds_num)
-        tmp00 = pd.read_csv(tmp_pair_data_dir + 'pair_' + ds_fn_list[ds_num], sep=",")
+        tmp00 = pd.read_csv(tmp_pair_data_dir + ds_fn_list[ds_num], header=None, sep=",", usecols=range(1,11))
         bnd = tmp00.shape[0]-10
         if bnd > 1000:
             bnd = 1000
@@ -722,10 +740,25 @@ if optim_lambda!=0:
         method='SLSQP', options={'ftol': 1e-03, 'disp': True, 'maxiter': 100},bounds=bnds)
         all_f.append(f)
         print(f)
-    pickle.dump( all_f, open( parent_dir + 'f_' + optim_lambda, "wb" ) )
-    exit()
+        #pickle.dump( all_f, open( parent_dir + 'f_' + optim_lambda, "wb" ) )
+        exit()
+    else:
+        for ds_num in range(len(ds_fn_list)):
+            print(ds_fn_list[ds_num], ds_num)
+            tmp00 = pd.read_csv(tmp_pair_data_dir + 'pair_' + ds_fn_list[ds_num], sep=",")
+            bnd = tmp00.shape[0]-10
+            if bnd > 1000:
+                bnd = 1000
+            bnds = ((9, bnd), (0, None))
+            f = minimize(main_optim_wrapper, (12, 1), args=(optim_lambda, niters_total,ds_num),
+            method='SLSQP', options={'ftol': 1e-03, 'disp': True, 'maxiter': 100},bounds=bnds)
+            all_f.append(f)
+            print(f)
+        pickle.dump( all_f, open( parent_dir + 'f_' + optim_lambda, "wb" ) )
+        exit()
 
 #TAL<- 0: (16,1), 1: (x,x), 2: (18,1533), 3: (17, 103768), 4: (9, 0.2), 5: (12, 1), 6: (12, 1), 7: (12, 1), 8: (12, 1), 9: ()
+#ml_case -> TTB: [12,50] & [80,0.000001], TAL: [12,77]
 
 def parallelizer(niters_total,ds_fn_list,v):
     total_ols_accs=[]
@@ -821,8 +854,9 @@ if testing==2:
     total_data = [total_ols_accs, total_ttb_accs, total_tally_accs, total_ds_accs, total_ds_agreements]
 else:
     total_data = [total_ols_accs, total_ttb_accs, total_tally_accs, total_ds_accs]
+
 #np.save(parent_dir + 'breast_cancer_115n_1000iters',all_data)
-pickle.dump( total_data, open( parent_dir + sv_fn, "wb" ) )
+#pickle.dump( total_data, open( parent_dir + sv_fn, "wb" ) )
 #total_data_load = pickle.load( open( parent_dir + 'breast_cancer_115n_1000iters', "rb" ) )
 
 '''
@@ -831,3 +865,4 @@ f_TTB = pickle.load( open( '/media/seb/HD_Numba_Juan/Dropbox/postdoc/LSS_project
 f_Txx = f_TTB # f_TAL #
 for funs in f_Txx:
     print(funs.fun, funs.x)
+'''
