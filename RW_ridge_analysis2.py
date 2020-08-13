@@ -9,6 +9,7 @@ import time
 import cProfile
 import pickle
 import time
+from scipy.stats import entropy
 
 def q_validities(pair_df):
     cue_valies=[]
@@ -140,7 +141,7 @@ def compute_ttb_prior0(ttb_inds,flippers):
     ttb_prior = ttb_prior*flippers
     return ttb_prior
 
-def run_ridges(X_train,X_train_ttb,Y_train,X_test,X_test_ttb,Y_test,lam_bda,ttb_prior,tally_prior,optim_lambda=0):
+def run_ridges(X_train,X_train_ttb,Y_train,X_test,X_test_ttb,Y_test,lam_bda,ttb_prior0,ttb_prior,tally_prior,ols_betas,permute_ols=0,optim_lambda=0):
     intercept=0
     if intercept==1:
         X_i = np.hstack([np.ones((X_train.shape[0],1)), X_train])
@@ -157,12 +158,32 @@ def run_ridges(X_train,X_train_ttb,Y_train,X_test,X_test_ttb,Y_test,lam_bda,ttb_
         lambda_mat = lam_bda*np.eye(X_i.shape[1])
     Xt_i = np.transpose(X_i)
     Xt_i_ttb = np.transpose(X_i_ttb)
+    if permute_ols:
+        ridge_prior = ols_betas
+        #print(ridge_prior)
+        #ridge_prior = np.flip(ridge_prior)
+        #print(ridge_prior)
+        np.random.shuffle(ridge_prior)
+        _, log_normal_acc, _ = log_regress_p(X_i,X_test,Y_train,Y_test,lam_bda,ridge_prior)
+        return log_normal_acc
+    else:
+        ridge_prior = np.zeros((len(ttb_prior),))
     if optim_lambda==0:
+        #print('tallying prior')
         B_logR_tally, log_tally_acc, log_tally_preds = log_regress_p(X_i,X_test,Y_train,Y_test,lam_bda,tally_prior)
-        B_logR_normal, log_normal_acc, log_normal_preds = log_regress_p(X_i,X_test,Y_train,Y_test,lam_bda,np.zeros((len(ttb_prior),)))
+        log_tally_entropy = entropy(np.abs(B_logR_tally), base=2) / entropy(np.ones(len(B_logR_tally)), base=2)
+        #print('ridge')
+        B_logR_normal, log_normal_acc, log_normal_preds = log_regress_p(X_i,X_test,Y_train,Y_test,lam_bda,ridge_prior)
+        log_normal_entropy = entropy(np.abs(B_logR_normal), base=2) / entropy(np.ones(len(B_logR_normal)), base=2)
+        #print('ttb prior')
         B_logR_ttb, log_ttb_acc, log_ttb_preds = log_regress_p(X_i_ttb,X_test_ttb,Y_train,Y_test,lam_bda,ttb_prior)
+        log_ttb_entropy = entropy(np.abs(B_logR_ttb) * np.abs(ttb_prior0), base=2) / entropy(np.ones(len(B_logR_ttb)), base=2)
         all_preds = [log_tally_preds, log_normal_preds, log_ttb_preds]
-        return log_normal_acc, log_ttb_acc, log_tally_acc, all_preds
+        all_entropies = [log_tally_entropy, log_normal_entropy, log_ttb_entropy]
+        #print('TAL prior: ', B_logR_tally, tally_prior, log_tally_entropy)
+        #print('TTB prior: ', B_logR_ttb, ttb_prior, ttb_prior0, np.abs(B_logR_ttb) * np.abs(ttb_prior0), log_ttb_entropy)
+        #print('Zero prior: ', B_logR_normal, log_normal_entropy)
+        return log_normal_acc, log_ttb_acc, log_tally_acc, all_preds, all_entropies
     elif optim_lambda=='TAL':
         _, log_tally_acc, _ = log_regress_p(X_i,X_test,Y_train,Y_test,lam_bda,tally_prior)
         return log_tally_acc
@@ -232,6 +253,11 @@ def beta_thresh(betas):
     return beta_test
 
 def log_regress_p(X_train,X_test,Y_train,Y_test,lam_bda,beta_zero):
+    #print(beta_zero)
+    if permute_prior:
+        beta_zero = np.random.choice([1,-1],len(beta_zero))*beta_zero
+        np.random.shuffle(beta_zero)
+    #print(beta_zero)
     Y_train = np.array(Y_train)
     Y_test = np.array(Y_test)
     Y_train[Y_train==-1] = 0
@@ -328,7 +354,7 @@ def log_regress(X_train,X_test,Y_train,Y_test):
     preds[msk] = 0
     #print(np.sum(pred_probs==0.5), '0.5')
     acc = get_acc(Y_test,preds)
-    return acc, preds
+    return acc, preds, beta_new
 
 def regress(X_train,Y_train,X_test,Y_test):
     X_i = X_train
@@ -372,17 +398,19 @@ def sim_data():
 rnd_seed = 333 #666 #101
 np.random.seed(rnd_seed)
 random.seed(rnd_seed)
-testing = -1 #0# -1 #1,-1,0,2
+testing = 0 # -2 # -1 #         1,-1,0,2
+permute_prior = 0
+#permute_ols = 0
 remove_zeros = 0
 v = 0
-niters_total = 1000 # 1000 #
+niters_total = 1000 # 100 #
 optim_lambda = 0 #'TAL' #'TTB' #   needs to be 0 to avoid optimization
-sample_size = 100
+sample_size = 50
 sigma = 1.3
 #lambda_list = np.linspace(0.0001,0.1,num=50) #1000000000000 to converge
 #lambda_list = np.hstack([0, np.geomspace(1,1000,num=50)]) #1000000000000 = 1e+12 to converge
-lambda_list = np.hstack([0, np.linspace(0.00001,0.1,num=5), np.linspace(0.1,1,num=5), np.linspace(1,10,num=5), np.linspace(10,100,num=5), np.linspace(100,1000,num=5),
-    np.geomspace(1000,1000000,num=5), np.geomspace(1000000,1000000000000,num=5)])
+lambda_list = np.hstack([0, np.linspace(0.00001,0.1,num=5), np.linspace(0.2,1,num=5), np.linspace(2,10,num=5), np.linspace(20,100,num=5), np.linspace(200,1000,num=5),
+    np.geomspace(2000,1000000,num=5), np.geomspace(2000000,1000000000000,num=5), 1000000000000*1000.0,1000000000000*1000000.0, 1000000000000*1000000000.0])
 
 wfh = 1
 if wfh ==1:
@@ -402,6 +430,14 @@ ml_case = 'breast-cancer-wisconsin.data'
 ml_case_labels = ['Clump Thickness','Uniformity of Cell Size','Uniformity of Cell Shape','Marginal Adhesion ','Single Epithelial Cell Size',
 'Bare Nuclei','Bland Chromatin','Normal Nucleoli','Mitoses','Class']
 
+ds_fn_list = ['prf.world.txt', 'fish.fertility.txt', 'fuel.world.txt', 'attractiveness.men.txt', 'landrent.world.txt', 'dropout.txt',
+    'attractiveness.women.txt', 'cloud.txt', 'car.world.txt', 'mortality.txt', 'bodyfat.world.txt', 'homeless.world.txt', 'oxygen.txt',
+    'ozone.txt', 'mammal.world.txt', 'fat.world.txt', 'glps.txt', 'oxidants.txt', 'cit.world.txt', 'house.world.txt']
+
+ds_fn_list2 = ['Professors\' Salaries', 'Fish Fertility', 'Fuel Consumption', 'Attractiveness Men', 'Land Rent', 'High School Dropouts',
+    'Attractiveness Women', 'Cloud Rainfall', 'Car Accidents', 'Mortality Rates', 'Body Fat', 'Homelessness', 'Oxygen',
+    'Ozone in S.F.', 'Mammals\' Sleep', 'Obesity', 'Biodiversity', 'Oxidants in L.A.', 'City Size', 'House Prices']
+
 if testing==1:
     test_fn = 'test_case_red2.csv'
     #test_fn = 'test_case_red.csv'
@@ -415,12 +451,16 @@ elif testing == -1:
     test_fn = 'not_testing_mode'
     ds_fn_list = [ml_case]
     sv_fn = 'breast_cancer_' + str(sample_size) + 'samples_' + str(niters_total) + 'iters'
+elif testing==-2:
+    test_fn = 'not_testing_mode'
+    sv_fn = '20ds_' + str(sample_size) + 'samples_' + str(niters_total) + 'iters'
+    ds_i = 1
+    ds_fn_list = [ds_fn_list[ds_i]] # ['cloud.txt'] #['cit.world.txt'] #['dropout.txt'] #['attractiveness.women.txt'] #
+    ds_fn_list2 = [ds_fn_list2[ds_i]] #['Cloud Rainfall'] #['City Size'] #['High School Dropouts'] #['Attractiveness Women'] #
 else:
     test_fn = 'not_testing_mode'
     sv_fn = '20ds_' + str(sample_size) + 'samples_' + str(niters_total) + 'iters'
-    ds_fn_list = ['prf.world.txt', 'fish.fertility.txt', 'fuel.world.txt', 'attractiveness.men.txt', 'landrent.world.txt', 'dropout.txt',
-    'attractiveness.women.txt', 'cloud.txt', 'car.world.txt', 'mortality.txt', 'bodyfat.world.txt', 'homeless.world.txt', 'oxygen.txt',
-    'ozone.txt', 'mammal.world.txt', 'fat.world.txt', 'glps.txt', 'oxidants.txt', 'cit.world.txt', 'house.world.txt']
+
 
 '''
 paired_ds_list = ['pair_attractiveness.men.txt', 'pair_dropout.txt', 'pair_cloud.txt',
@@ -445,11 +485,13 @@ beta_start = 0
 
 def main(niter, ds_fn_list,v=0):
     print('iteration: ' + str(niter+1) + ' of ' + str(niters_total))
+    all_ds_entropies=[]
     all_ds_accs=[]
     all_ds_agreements=[]
     all_ols_accs=[]
     all_ttb_accs=[]
     all_tally_accs=[]
+    all_permute_ols_accs=[]
     for ds_num in range(len(ds_fn_list)):
         #if ds_num==1:
         #    continue
@@ -496,8 +538,9 @@ def main(niter, ds_fn_list,v=0):
         #print(tmp0.mean(axis=0))#;exit()
         #mid_ind = int(tmp0.shape[0]*0.5)
         #print(mid_ind)
-        print(tmp0.head())
+        #print(tmp0.head())
         mid_ind=sample_size
+        all_entropies=[]
         all_accs=[]
         all_agreements=[]
         tally_accs=[]
@@ -549,28 +592,47 @@ def main(niter, ds_fn_list,v=0):
             ttb_acc = get_acc(Y_test,ttb_preds)
             ttb_accs.append(ttb_acc)
             ttb_prior0 = compute_ttb_prior0(ttb_inds,flippers)
+            #print('ttb prior 0 (multiples X)')
+            #print(ttb_prior0)
+            #if permute_prior:
+            #    np.random.shuffle(ttb_prior0)
+            #print(ttb_prior0)
             ttb_prior0 = ttb_prior0.reshape((ttb_prior0.shape + (1,)))
             ttb_prior0_train = np.tile(ttb_prior0,X_train.shape[0]).T
             ttb_prior0_test = np.tile(ttb_prior0,X_test.shape[0]).T
+            #ttb_prior0_normed = ttb_prior0/np.max(np.abs(ttb_prior0_train))
             X_train_ttb = (ttb_prior0_train*X_train)/np.max(np.abs(ttb_prior0_train))
             X_test_ttb = (ttb_prior0_test*X_test)/np.max(np.abs(ttb_prior0_train))
             f = minimize_scalar(lambda B: scaling_prior_log(Y_train, X_train_ttb, B),
             method='golden', options={'maxiter': 10000})
             ttb_prior = np.tile(f.x,X_train.shape[1]) #after ttbing X, we need a scaling prior
-            log_ols_acc, log_ols_preds = log_regress(X_train,X_test,Y_train,Y_test)
+            ttb_prior_list = [ttb_prior0.flatten(), ttb_prior]
+            log_ols_acc, log_ols_preds, ols_betas = log_regress(X_train,X_test,Y_train,Y_test)
             ols_accs.append(log_ols_acc)
             cv_accs=[]
+            cv_entropies=[]
             cv_agreement = []
+            cv_permute_ols_accs = []
             for lam_bda in lambda_list:
-                normalR_acc, ttbR_acc, tallyR_acc, preds3 = run_ridges(X_train,X_train_ttb,Y_train,X_test,X_test_ttb,Y_test,lam_bda,ttb_prior,tally_prior)
+                print('lambda: ',lam_bda)
+                #permute_ols = 0
+                normalR_acc, ttbR_acc, tallyR_acc, preds3, entropies3 = run_ridges(X_train,X_train_ttb,Y_train,X_test,X_test_ttb,Y_test,lam_bda,ttb_prior0.flatten(),
+                ttb_prior,tally_prior,ols_betas)
                 tallyR_preds, normalR_preds, ttbR_preds = preds3
+                tallyR_entropy, normalR_entropy, ttbR_entropy = entropies3
+                cv_entropies.append([tallyR_entropy, normalR_entropy, ttbR_entropy])
                 cv_accs.append([normalR_acc, ttbR_acc, tallyR_acc])
                 agree1 = np.array([get_acc(log_ols_preds,tallyR_preds), get_acc(tally_preds,tallyR_preds), get_acc(log_ols_preds,ttbR_preds), get_acc(ttb_preds,ttbR_preds)])
                 agree2 = np.array([get_acc(tallyR_preds,log_ols_preds), get_acc(tallyR_preds,tally_preds), get_acc(ttbR_preds,log_ols_preds), get_acc(ttbR_preds,ttb_preds)])
                 cv_agreement.append((agree1+agree2)/2)
+                permute_normalR_acc = run_ridges(X_train,X_train_ttb,Y_train,X_test,X_test_ttb,Y_test,lam_bda,ttb_prior0.flatten(),
+                ttb_prior,tally_prior,ols_betas,permute_ols=1)
+                cv_permute_ols_accs.append(permute_normalR_acc)
             #exit()
+            all_entropies.append(cv_entropies)
             all_accs.append(cv_accs)
             all_agreements.append(cv_agreement)
+            #all_permute_ols_accs.append(cv_permute_ols_accs)
             #print 'tally_prior: ', tally_prior
             #exit()
             if v==1:
@@ -586,10 +648,12 @@ def main(niter, ds_fn_list,v=0):
         all_ols_accs.append(np.array(ols_accs))
         all_ttb_accs.append(np.array(ttb_accs))
         all_tally_accs.append(np.array(tally_accs))
+        all_ds_entropies.append(np.array(all_entropies))
         all_ds_accs.append(np.array(all_accs))
         all_ds_agreements.append(np.array(all_agreements))
+        all_permute_ols_accs.append(cv_permute_ols_accs)
         #exit()
-    return all_ols_accs, all_ttb_accs, all_tally_accs, all_ds_accs, all_ds_agreements
+    return all_ols_accs, all_ttb_accs, all_tally_accs, all_ds_accs, all_ds_agreements, all_permute_ols_accs, all_ds_entropies
 
 def main_optim(mid_ind, lam_bda, optim_lambda, ds_num, niter):
     all_ds_accs=[]
@@ -663,7 +727,7 @@ def main_optim(mid_ind, lam_bda, optim_lambda, ds_num, niter):
                 test_set = pd.DataFrame(test_set)
             global beta_start
             beta_start = np.random.normal(0,0.1,size=X_train.shape[1])
-            log_ols_acc, _ = log_regress(X_train,X_test,Y_train,Y_test)
+            log_ols_acc, _, _ = log_regress(X_train,X_test,Y_train,Y_test)
             if optim_lambda=='TAL':
                 _, tally_prior = tallying(train_set,np.array([])) #if prior not calculated yet, send empty array
                 tally_preds, _ = tallying(test_set,np.sign(tally_prior))
@@ -765,23 +829,36 @@ def parallelizer(niters_total,ds_fn_list,v):
     total_ttb_accs=[]
     total_tally_accs=[]
     total_ds_accs=[]
+    total_ds_entropies=[]
     total_ds_agreements=[]
+    total_permute_ols_accs=[]
     for niter in range(niters_total):
-        all_ols_accs, all_ttb_accs, all_tally_accs, all_ds_accs, all_ds_agreements = main(niter, ds_fn_list, v=v)
+        all_ols_accs, all_ttb_accs, all_tally_accs, all_ds_accs, all_ds_agreements, all_permute_ols_accs, all_ds_entropies = main(niter, ds_fn_list, v=v)
         total_ols_accs.append(all_ols_accs)
         total_ttb_accs.append(all_ttb_accs)
         total_tally_accs.append(all_tally_accs)
         total_ds_accs.append(all_ds_accs)
+        total_ds_entropies.append(all_ds_entropies)
         total_ds_agreements.append(all_ds_agreements)
-    return total_ols_accs, total_ttb_accs, total_tally_accs, total_ds_accs, total_ds_agreements
+        total_permute_ols_accs.append(all_permute_ols_accs)
+    return total_ols_accs, total_ttb_accs, total_tally_accs, total_ds_accs, total_ds_agreements, total_permute_ols_accs, total_ds_entropies
 
 #cProfile.run('parallelizer(niters_total,ds_fn_list,v)')
-total_ols_accs, total_ttb_accs, total_tally_accs, total_ds_accs, total_ds_agreements = parallelizer(niters_total,ds_fn_list,v)
+load_previous = 1
+if load_previous:
+    total_data_load = pickle.load( open( parent_dir + sv_fn, "rb" ) )
+    total_ols_accs, total_ttb_accs, total_tally_accs, total_ds_accs, total_ds_agreements, total_permute_ols_accs, total_ds_entropies = total_data_load
+else:
+    total_ols_accs, total_ttb_accs, total_tally_accs, total_ds_accs, total_ds_agreements, total_permute_ols_accs, total_ds_entropies = parallelizer(niters_total,ds_fn_list,v)
 
 all_ols_accs = np.mean(total_ols_accs,axis=0)
 all_ttb_accs = np.mean(total_ttb_accs,axis=0)
 all_tally_accs = np.mean(total_tally_accs,axis=0)
 all_ds_accs = np.mean(total_ds_accs,axis=0)
+
+lambda_list2=['OLS','TTB','TAL']
+for l in lambda_list:
+    lambda_list2.append('{:.1e}'.format(l))
 
 def get_means(ds_num):
     big3 = [np.mean(all_ols_accs[ds_num]), np.mean(all_ttb_accs[ds_num]), np.mean(all_tally_accs[ds_num])]
@@ -791,59 +868,340 @@ def get_means(ds_num):
     ridge_tally = lambda_accs[:,2]
     return ridge_normal, ridge_ttb, ridge_tally, big3
 
+def get_stds(ds_num):
+    all_ols_stds = np.std(total_ols_accs,axis=0)#/ np.power(niters_total,1/2)
+    all_ttb_stds = np.std(total_ttb_accs,axis=0)#/ np.power(niters_total,1/2)
+    all_tally_stds = np.std(total_tally_accs,axis=0)#/ np.power(niters_total,1/2)
+    all_ds_stds = np.std(total_ds_accs,axis=0)#/ np.power(niters_total,1/2)
+    big3 = [np.mean(all_ols_stds[ds_num]), np.mean(all_ttb_stds[ds_num]), np.mean(all_tally_stds[ds_num])]
+    lambda_accs = np.mean(all_ds_stds[ds_num], axis=0)
+    ridge_normal = lambda_accs[:,0]
+    ridge_ttb = lambda_accs[:,1]
+    ridge_tally = lambda_accs[:,2]
+    return ridge_normal, ridge_ttb, ridge_tally, big3
+
 def get_plot():
+    plt.rcParams["figure.figsize"] = (20,10)
     if testing == -1:
         fig, ax = plt.subplots(nrows=2, ncols=2)
     else:
-        fig, ax = plt.subplots(nrows=5, ncols=4)
+        fig, ax = plt.subplots(nrows=4, ncols=5)
     i = 0
     for row in ax:
         for col in row:
             ridge_normal, ridge_ttb, ridge_tally, big3 = get_means(i)
             #y = np.hstack([big3, ridge_betas])
-            col.plot(0, big3[0], 'bo') #ols
-            col.plot(1, big3[1], 'g*') #ttb
-            col.plot(2, big3[2], 'r+') #tally
-            col.plot(range(len(big3), len(big3) + len(ridge_normal)), ridge_normal, 'bo')
-            col.plot(range(len(big3), len(big3) + len(ridge_normal)), ridge_ttb, '*g')
-            col.plot(range(len(big3), len(big3) + len(ridge_normal)), ridge_tally, '-r')
-            col.set_title(ds_fn_list[i])
+            col.plot(0, big3[0], 'bo', label='OLS') #ols
+            col.plot(range(len(big3)-2, len(big3)-2 + len(ridge_normal)), ridge_normal, '-b', label="Zero prior")
+            col.plot(range(len(big3)-2, len(big3)-2 + len(ridge_normal)), ridge_ttb, '-g', label='TTB prior')
+            col.plot(range(len(big3)-2, len(big3)-2 + len(ridge_normal)), ridge_tally, '-r', label='TAL prior')
+            col.plot(len(ridge_normal)+1, big3[1], 'g*', label='TTB') #ttb
+            col.plot(len(ridge_normal)+1, big3[2], 'r*', label='TAL') #tally
+            col.set_title(ds_fn_list2[i])
+            col.set_xlabel('Model/Penalty parameter')
+            col.set_ylabel('Accuracy')
             if testing != -1:
                 i += 1
     plt.subplots_adjust( hspace=0.36, wspace=0.2 , top=0.94 , left=0.07 , right=0.96 , bottom=0.03 )
     plt.show()
 
-#get_plot()
+get_plot()
 #plt.close()
 
+def get_entropies():
+    plt.rcParams["figure.figsize"] = (20,10)
+    plt.rcParams.update({'font.size': 10})
+    if testing == -1 or testing == -2:
+        fig, ax = plt.subplots(nrows=2, ncols=2)
+    else:
+        fig, ax = plt.subplots(nrows=4, ncols=5)
+    i = 0
+    for row in ax:
+        for col in row:
+            #print(i)
+            tally_entropies=[]
+            ols_entropies=[]
+            ttb_entropies=[]
+            for niter in range(niters_total):
+                tally_entropies.append(total_ds_entropies[niter][i][0][:,0])
+                ols_entropies.append(total_ds_entropies[niter][i][0][:,1])
+                ttb_entropies.append(total_ds_entropies[niter][i][0][:,2])
+            ols_entropies2 = np.mean(ols_entropies, axis=0)
+            tally_entropies2 = np.mean(tally_entropies, axis=0)
+            ttb_entropies2 = np.mean(ttb_entropies, axis=0)
+            col.plot(0, ols_entropies2[0], 'bo', label='OLS') #ols
+            col.plot(lambda_list2[3:], ols_entropies2, '-b', label="Zero prior")
+            col.plot(lambda_list2[3:], ttb_entropies2, '-g', label='TTB prior')
+            col.plot(lambda_list2[3:], tally_entropies2, '-r', label='TAL prior')
+            col.plot(len(lambda_list2[3:]), ttb_entropies2[-1], 'g*', label='TTB') #ttb
+            col.plot(len(lambda_list2[3:]), tally_entropies2[-1], 'r*', label='TAL') #tally
+            col.set_title(ds_fn_list2[i])
+            col.set_ylim(ymax = 1.05, ymin = 0)
+            #col.set_xlabel('Model/Penalty parameter')
+            #col.set_ylabel('Normalized \n entropy')
+            #col.set_xticklabels(lambda_list2[3:], rotation=40)
+            j = 0
+            for tick in col.xaxis.get_major_ticks():
+                tick.label.set_fontsize(6)
+                if i<15:
+                    tick.set_visible(False)
+                else:
+                    if j%2:
+                        tick.set_visible(False)
+                # specify integer or one of preset strings, e.g.
+                #tick.label.set_fontsize('x-small')
+                tick.label.set_rotation(60)
+                j += 1
+            if i==4:
+                col.legend(loc='lower right', prop={'size': 4.5})
+            if testing != -1 or testing != -2:
+                i += 1
+    fig.text(0.5, 0.02, 'Model/Penalty parameter', ha='center', va='center', fontsize=18)
+    fig.text(0.03, 0.5, 'Normalized entropy', ha='center', va='center', rotation='vertical', fontsize=18)
+    plt.subplots_adjust( hspace=0.36, wspace=0.3 , top=0.94 , left=0.08 , right=0.96 , bottom=0.145 )
+    plt.show()
 
-def get_plot2():
-    ridge_normal, ridge_ttb, ridge_tally, big3 = get_means(0)
+get_entropies()
+
+def get_plot2(title, i):
+    #from scipy import stats
+    plt.rcParams.update({'font.size': 10})
+    ridge_normal, ridge_ttb, ridge_tally, big3 = get_means(i)
+    ridge_normal_std, ridge_ttb_std, ridge_tally_std, big3_std = get_stds(i)
+    plt.rcParams["figure.figsize"] = (10,10)
+    fig, ax = plt.subplots()
+    # We need to draw the canvas, otherwise the labels won't be positioned and
+    # won't have values yet.
+    fig.canvas.draw()
+    ymax = np.max([ridge_normal.max(), ridge_ttb.max(), ridge_tally.max(), np.max(big3)])
+    ax.plot(0, big3[0], 'bo', label='OLS') #ols
+    ax.plot(lambda_list2[3:], ridge_normal, '-b', label="Zero prior")
+    ax.plot(lambda_list2[3:], ridge_ttb, '-g', label="TTB prior")
+    ax.plot(lambda_list2[3:], ridge_tally, '-r', label="TAL prior")
+    ax.plot(lambda_list2[-1], big3[1], '*g', label='TTB') #ttb
+    ax.plot(lambda_list2[-1], big3[2], 'r*', label='TAL') #tally
+    #ridge_conf = stats.norm.interval(0.68, loc=ridge_normal, scale=ridge_normal_std/np.sqrt(niters_total))
+    #print(ridge_conf)
+    shrink_std = 0.25
+    ax.fill_between(lambda_list2[3:], ridge_normal - (ridge_normal_std*shrink_std), #ridge_conf[0], #
+    ridge_normal + (ridge_normal_std*shrink_std), alpha=0.1, color='b') #ridge_conf[1]
+    ax.fill_between(lambda_list2[3:], ridge_ttb - (ridge_ttb_std*shrink_std),
+    ridge_ttb + (ridge_ttb_std*shrink_std), alpha=0.1, color='g')
+    ax.fill_between(lambda_list2[3:], ridge_tally - (ridge_tally_std*shrink_std),
+    ridge_tally + (ridge_tally_std*shrink_std), alpha=0.1, color='r')
+    #ax.set_title("Breast Cancer Dataset")
+    #ax.set_ylim(ymax = 1, ymin = 0)
+    ax.set_title(title)
+    #ax.set_xticklabels(lambda_list2, rotation=45)
+    plt.xticks(rotation=60)
+    handles, labels = ax.get_legend_handles_labels()
+    ax.legend(handles, labels)
+    plt.xlabel('Penalty parameter', fontsize=18)
+    plt.ylabel('Accuracy', fontsize=16)
+    #plt.figure(num=1, figsize=(20,20), dpi=300, facecolor='w', edgecolor='k')
+    #fig.savefig(parent_dir + 'breast_cancer_data.png', bbox_inches='tight', dpi=300)
+    plt.show()
+
+i = 15
+#get_plot2(ds_fn_list2[i] + ' (N = ' + str(sample_size) + ')', i)
+get_plot2(ds_fn_list2[i], i)
+
+def get_entropy2(title, i):
+    ridge_normal, ridge_ttb, ridge_tally, big3 = get_means(i)
+    plt.rcParams["figure.figsize"] = (10,10)
+    plt.rcParams.update({'font.size': 10})
+    fig, ax = plt.subplots()
+    # We need to draw the canvas, otherwise the labels won't be positioned and
+    # won't have values yet.
+    fig.canvas.draw()
+    tally_entropies=[]
+    ols_entropies=[]
+    ttb_entropies=[]
+    for niter in range(niters_total):
+        tally_entropies.append(total_ds_entropies[niter][i][0][:,0])
+        ols_entropies.append(total_ds_entropies[niter][i][0][:,1])
+        ttb_entropies.append(total_ds_entropies[niter][i][0][:,2])
+    ols_entropies2 = np.mean(ols_entropies, axis=0)
+    tally_entropies2 = np.mean(tally_entropies, axis=0)
+    ttb_entropies2 = np.mean(ttb_entropies, axis=0)
+    shrink_std = 0.25
+    ols_entropies2_stds = np.std(ols_entropies, axis=0) * shrink_std
+    tally_entropies2_stds = np.std(tally_entropies, axis=0) * shrink_std
+    ttb_entropies2_stds = np.std(ttb_entropies, axis=0) * shrink_std
+    ax.plot(0, ols_entropies2[0], 'bo', label='OLS') #ols
+    ax.plot(lambda_list2[3:], ols_entropies2, '-b', label="Zero prior")
+    ax.plot(lambda_list2[3:], ttb_entropies2, '-g', label='TTB prior')
+    ax.plot(lambda_list2[3:], tally_entropies2, '-r', label='TAL prior')
+    ax.plot(len(lambda_list2[3:])-1, ttb_entropies2[-1], 'g*', label='TTB') #ttb
+    ax.plot(len(lambda_list2[3:])-1, tally_entropies2[-1], 'r*', label='TAL') #tally
+    ax.fill_between(lambda_list2[3:], ols_entropies2 - ols_entropies2_stds, #ridge_conf[0], #
+    ols_entropies2 + ols_entropies2_stds, alpha=0.1, color='b') #ridge_conf[1]
+    ax.fill_between(lambda_list2[3:], ttb_entropies2 - ttb_entropies2_stds,
+    ttb_entropies2 + ttb_entropies2_stds, alpha=0.1, color='g')
+    ax.fill_between(lambda_list2[3:], tally_entropies2 - tally_entropies2_stds,
+    tally_entropies2 + tally_entropies2_stds, alpha=0.1, color='r')
+    #ax.set_title(ds_fn_list2[i])
+    ax.set_ylim(ymax = 1.05, ymin = 0)
+    ax.set_title(title)
+    #ax.set_xticklabels(lambda_list2, rotation=45)
+    plt.xticks(rotation=60)
+    handles, labels = ax.get_legend_handles_labels()
+    ax.legend(handles, labels)
+    plt.xlabel('Penalty parameter', fontsize=18)
+    plt.ylabel('Normalized entropy', fontsize=16)
+    plt.show()
+
+i = 13
+#get_entropy2(ds_fn_list2[i] + ' (N = ' + str(sample_size) + ')', i)
+get_entropy2(ds_fn_list2[i], i)
+
+def get_worst_best(data, ds_num, accs=1):
+    if accs:
+        total_ds_accs, total_permute_ols_accs = data
+        cols = [0,1,2]
+        if len(total_permute_ols_accs[0])>1:
+            ridge_normal_permute_tmp=[]
+            for i in range(niters_total):
+                ridge_normal_permute_tmp.append(total_permute_ols_accs[i][ds_num])
+            ridge_normal_permute = np.mean(np.vstack(ridge_normal_permute_tmp), axis = 0)
+        else:
+            ridge_normal_permute = np.mean(total_permute_ols_accs,axis=0)
+    else:
+        total_ds_accs = data
+        cols = [1,2,0]
+    ridge_normal, ridge_ttb, ridge_tally, _ = get_means(ds_num)
+    b_ridge_accs=[];w_ridge_accs=[];
+    b_ridge_ttb_accs=[];w_ridge_ttb_accs=[];
+    b_ridge_tally_accs=[];w_ridge_tally_accs=[];
+    b_ridge_permute_accs=[];w_ridge_permute_accs=[];
+    all_ridge_accs=[];all_ridge_ttb_accs=[];all_ridge_tally_accs=[];
+    for i in range(niters_total): #0 normal, 1 ttb, 2 tal #.argmax()
+        b_ridge_accs.append(total_ds_accs[i][ds_num][0][ridge_normal.argmax(),cols[0]])
+        w_ridge_accs.append(total_ds_accs[i][ds_num][0][ridge_normal.argmin(),cols[0]])
+        all_ridge_accs.append(total_ds_accs[i][ds_num][0][:,cols[0]])
+        b_ridge_ttb_accs.append(total_ds_accs[i][ds_num][0][ridge_ttb.argmax(),cols[1]])
+        w_ridge_ttb_accs.append(total_ds_accs[i][ds_num][0][ridge_ttb.argmin(),cols[1]])
+        all_ridge_ttb_accs.append(total_ds_accs[i][ds_num][0][:,cols[1]])
+        b_ridge_tally_accs.append(total_ds_accs[i][ds_num][0][ridge_tally.argmax(),cols[2]])
+        w_ridge_tally_accs.append(total_ds_accs[i][ds_num][0][ridge_tally.argmin(),cols[2]])
+        all_ridge_tally_accs.append(total_ds_accs[i][ds_num][0][:,cols[2]])
+        if accs:
+            b_ridge_permute_accs.append(total_permute_ols_accs[i][ds_num][ridge_normal_permute.argmax()])
+            w_ridge_permute_accs.append(total_permute_ols_accs[i][ds_num][ridge_normal_permute.argmin()])
+    return b_ridge_accs, w_ridge_accs, b_ridge_ttb_accs, w_ridge_ttb_accs, b_ridge_tally_accs, w_ridge_tally_accs, b_ridge_permute_accs, w_ridge_permute_accs, \
+    np.array(all_ridge_accs).flatten(), np.array(all_ridge_ttb_accs).flatten(), np.array(all_ridge_tally_accs).flatten()
+
+def get_plot2_violin(all_ds=0, accs=1):
+    if accs:
+        data = total_ds_accs, total_permute_ols_accs
+    else:
+        data = total_ds_entropies
+    import seaborn as sns
+    vector_size = np.size(total_tally_accs)
+    if all_ds:
+        b_ridge_accs=[];w_ridge_accs=[];
+        b_ridge_ttb_accs=[];w_ridge_ttb_accs=[];
+        b_ridge_tally_accs=[];w_ridge_tally_accs=[];
+        b_ridge_permute_accs=[];w_ridge_permute_accs=[];
+        ds_num_vec=[]; ds_num_vec2=[]
+        all_ridge_accs=[]; all_ridge_ttb_accs=[]; all_ridge_tally_accs=[]
+        for ds_num in range(len(ds_fn_list)):
+            b_ridge_accs0, w_ridge_accs0, b_ridge_ttb_accs0, w_ridge_ttb_accs0, b_ridge_tally_accs0, \
+            w_ridge_tally_accs0, b_ridge_permute_accs0, w_ridge_permute_accs0, \
+            all_ridge_accs0, all_ridge_ttb_accs0, all_ridge_tally_accs0 = get_worst_best(data, ds_num, accs=accs)
+            b_ridge_accs.append(b_ridge_accs0); w_ridge_accs.append(w_ridge_accs0);
+            b_ridge_ttb_accs.append(b_ridge_ttb_accs0); w_ridge_ttb_accs.append(w_ridge_ttb_accs0);
+            b_ridge_tally_accs.append(b_ridge_tally_accs0); w_ridge_tally_accs.append(w_ridge_tally_accs0);
+            b_ridge_permute_accs.append(b_ridge_permute_accs0); w_ridge_permute_accs.append(w_ridge_permute_accs0);
+            ds_num_vec.append(np.tile(ds_num,len(b_ridge_accs0)))
+            all_ridge_accs.append(all_ridge_accs0)
+            all_ridge_ttb_accs.append(all_ridge_ttb_accs0)
+            all_ridge_tally_accs.append(all_ridge_tally_accs0)
+            ds_num_vec2.append(np.tile(ds_num,len(all_ridge_accs0)))
+        b_ridge_accs = np.array(b_ridge_accs).flatten(); w_ridge_accs = np.array(w_ridge_accs).flatten()
+        b_ridge_ttb_accs = np.array(b_ridge_ttb_accs).flatten(); w_ridge_ttb_accs = np.array(w_ridge_ttb_accs).flatten()
+        b_ridge_tally_accs = np.array(b_ridge_tally_accs).flatten(); w_ridge_tally_accs = np.array(w_ridge_tally_accs).flatten()
+        b_ridge_permute_accs = np.array(b_ridge_permute_accs).flatten(); w_ridge_permute_accs = np.array(w_ridge_permute_accs).flatten()
+        all_ridge_accs = np.array(all_ridge_accs).flatten()
+        all_ridge_ttb_accs = np.array(all_ridge_ttb_accs).flatten()
+        all_ridge_tally_accs = np.array(all_ridge_tally_accs).flatten()
+    else:
+        ds_num = 0
+        b_ridge_accs, w_ridge_accs, b_ridge_ttb_accs, w_ridge_ttb_accs, b_ridge_tally_accs, \
+        w_ridge_tally_accs, b_ridge_permute_accs, w_ridge_permute_accs, \
+        all_ridge_accs, all_ridge_ttb_accs, all_ridge_tally_accs = get_worst_best(data, ds_num, accs=accs)
+    b_ridge_normal_data = np.hstack([np.tile('Best \n Zero Prior',(vector_size,1)),np.array([b_ridge_accs]).T])
+    w_ridge_normal_data = np.hstack([np.tile('Worst \n Zero Prior',(vector_size,1)),np.array([w_ridge_accs]).T])
+    b_ridge_ttb_data = np.hstack([np.tile('Best \n TTB Prior',(vector_size,1)),np.array([b_ridge_ttb_accs]).T])
+    w_ridge_ttb_data = np.hstack([np.tile('Worst \n TTB Prior',(vector_size,1)),np.array([w_ridge_ttb_accs]).T])
+    b_ridge_tally_data = np.hstack([np.tile('Best \n TAL Prior',(vector_size,1)),np.array([b_ridge_tally_accs]).T])
+    w_ridge_tally_data = np.hstack([np.tile('Worst \n TAL Prior',(vector_size,1)),np.array([w_ridge_tally_accs]).T])
+    vector_size2 = np.size(all_ridge_accs)
+    all_ridge_accs_data = np.hstack([np.tile('Mean \n Zero Prior',(vector_size2,1)),np.array([all_ridge_accs]).T])
+    all_ridge_ttb_accs_data = np.hstack([np.tile('Mean \n TTB Prior',(vector_size2,1)),np.array([all_ridge_ttb_accs]).T])
+    all_ridge_tally_accs_data = np.hstack([np.tile('Mean \n TAL Prior',(vector_size2,1)),np.array([all_ridge_tally_accs]).T])
+    if accs:
+        b_ridge_normal_permute_data = np.hstack([np.tile('Best OLS \n Permuted \n Prior',(vector_size,1)),np.array([b_ridge_permute_accs]).T])
+        w_ridge_normal_permute_data = np.hstack([np.tile('Worst OLS \n Permuted \n Prior',(vector_size,1)),np.array([w_ridge_permute_accs]).T])
+        include_baselines = 0
+        if include_baselines:
+            tal_data = np.hstack([np.tile('TAL',(np.size(total_tally_accs),1)),np.array([np.array(total_tally_accs).flatten()]).T])
+            ttb_data = np.hstack([np.tile('TTB',(np.size(total_ttb_accs),1)),np.array([np.array(total_ttb_accs).flatten()]).T])
+            ols_data = np.hstack([np.tile('OLS',(np.size(total_ols_accs),1)),np.array([np.array(total_ols_accs).flatten()]).T])
+            data = np.vstack([ols_data,tal_data,ttb_data,b_ridge_normal_data,w_ridge_normal_data,b_ridge_ttb_data,w_ridge_ttb_data,
+            b_ridge_tally_data,w_ridge_tally_data,b_ridge_normal_permute_data,w_ridge_normal_permute_data])
+            model2_labels = np.vstack([np.tile('0',(vector_size,1)),np.tile('1',(vector_size,1)),np.tile('2',(vector_size,1)),
+            np.tile('3',(vector_size,1)),np.tile('3',(vector_size,1)),np.tile('4',(vector_size,1)),np.tile('4',(vector_size,1)),
+            np.tile('5',(vector_size,1)),np.tile('5',(vector_size,1)),np.tile('6',(vector_size,1)),np.tile('6',(vector_size,1)) ])
+        else:
+            data = np.vstack([b_ridge_normal_data,w_ridge_normal_data,b_ridge_ttb_data,w_ridge_ttb_data,
+            b_ridge_tally_data,w_ridge_tally_data,b_ridge_normal_permute_data,w_ridge_normal_permute_data,
+            all_ridge_accs_data,all_ridge_ttb_accs_data,all_ridge_tally_accs_data])
+            model2_labels = np.vstack([
+            np.tile('b',(vector_size,1)),np.tile('b',(vector_size,1)),np.tile('g',(vector_size,1)),np.tile('g',(vector_size,1)),
+            np.tile('r',(vector_size,1)),np.tile('r',(vector_size,1)),np.tile('y',(vector_size,1)),np.tile('y',(vector_size,1)),
+            np.tile('b',(vector_size2,1)),np.tile('g',(vector_size2,1)),np.tile('r',(vector_size2,1))])
+            xlabel_order = ['Best \n Zero Prior', 'Worst \n Zero Prior', 'Best \n TTB Prior', 'Worst \n TTB Prior',
+            'Best \n TAL Prior', 'Worst \n TAL Prior', 'Best OLS \n Permuted \n Prior', 'Worst OLS \n Permuted \n Prior']#,
+            #'Mean \n Zero Prior','Mean \n TTB Prior','Mean \n TAL Prior']
+    else:
+        data = np.vstack([b_ridge_normal_data,w_ridge_normal_data,b_ridge_ttb_data,w_ridge_ttb_data,
+        b_ridge_tally_data,w_ridge_tally_data,all_ridge_accs_data,all_ridge_ttb_accs_data,all_ridge_tally_accs_data])
+        model2_labels = np.vstack([
+        np.tile('b',(vector_size,1)),np.tile('b',(vector_size,1)),np.tile('g',(vector_size,1)),np.tile('g',(vector_size,1)),
+        np.tile('r',(vector_size,1)),np.tile('r',(vector_size,1)),
+        np.tile('b',(vector_size2,1)),np.tile('g',(vector_size2,1)),np.tile('r',(vector_size2,1))])
+        best = 0
+        if best:
+            xlabel_order = ['Best \n Zero Prior', 'Best \n TTB Prior','Best \n TAL Prior']
+        else:
+            xlabel_order = ['Mean \n Zero Prior', 'Mean \n TTB Prior','Mean \n TAL Prior']
+    data = np.hstack([data,model2_labels])
+    if accs:
+        ylabel = 'Accuracy'
+    else:
+        ylabel = 'Normalized \n entropy'
+    df = pd.DataFrame(data,columns=['Model',ylabel,'Model2'])
+    ds_num_vec3 = np.hstack([np.tile(np.array(ds_num_vec).flatten(),len(df.Model.unique())-3), np.tile(np.array(ds_num_vec2).flatten(),3)])
+    df['ds_num'] = ds_num_vec3
+    df[ylabel] = pd.to_numeric(df[ylabel], downcast="float", errors='coerce')
+    df2 = df.groupby(['ds_num','Model','Model2'], as_index=False).mean()
     plt.rcParams["figure.figsize"] = (20,10)
     fig, ax = plt.subplots()
     # We need to draw the canvas, otherwise the labels won't be positioned and
     # won't have values yet.
     fig.canvas.draw()
-    ax.plot('OLS', big3[0], 'bo', label='OLS') #ols
-    ax.plot('TTB', big3[1]-0.001, '*g', label='TTB') #ttb
-    ax.plot('TAL', big3[2], 'r+', label='TAL') #tally
-    ax.plot(lambda_list2[3:], ridge_normal, '-b', label="Zero prior")
-    ax.plot(lambda_list2[3:], ridge_ttb, '-g', label="TTB prior")
-    ax.plot(lambda_list2[3:], ridge_tally, '-r', label="TAL prior")
-    ax.set_title("Breast Cancer Dataset")
-    #ax.set_xticklabels(lambda_list2, rotation=45)
-    plt.xticks(rotation=60)
-    handles, labels = ax.get_legend_handles_labels()
-    ax.legend(handles, labels)
-    plt.xlabel('Model/Penalty parameter', fontsize=18)
-    plt.ylabel('Accuracy', fontsize=16)
-    #plt.figure(num=1, figsize=(20,20), dpi=300, facecolor='w', edgecolor='k')
-    fig.savefig(parent_dir + 'breast_cancer_data.png', bbox_inches='tight', dpi=300)
+    plt.ylim(ymax = 1, ymin = 0)
+    f = sns.violinplot(x='Model', y=ylabel, data=df, color="0.8", zorder=1, ax=ax, order=xlabel_order) #hue="Model2",
+    g = sns.stripplot(x='Model', y=ylabel, data=df2, jitter=True, zorder=1, hue="Model2", ax=ax,
+    palette={'b':'b', 'g':'g', 'r':'r', 'y':'y', 'k':'k'}, alpha=0.5, order=xlabel_order)
+    ax.legend_.remove()
+    plt.rcParams.update({'font.size': 18})
+    plt.subplots_adjust(left=0.1, right=0.9, top=0.96, bottom=0.16, wspace=0.265)
+    plt.tight_layout()
     plt.show()
 
-lambda_list2=['OLS','TTB','TAL']
-for l in lambda_list:
-    lambda_list2.append('{:.1e}'.format(l))
+get_plot2_violin(all_ds=1, accs=0)
 
 #get_plot2()
 #plt.close()
@@ -853,11 +1211,11 @@ for l in lambda_list:
 if testing==2:
     total_data = [total_ols_accs, total_ttb_accs, total_tally_accs, total_ds_accs, total_ds_agreements]
 else:
-    total_data = [total_ols_accs, total_ttb_accs, total_tally_accs, total_ds_accs]
+    total_data = [total_ols_accs, total_ttb_accs, total_tally_accs, total_ds_accs, total_ds_agreements, total_permute_ols_accs, total_ds_entropies]
 
 #np.save(parent_dir + 'breast_cancer_115n_1000iters',all_data)
 #pickle.dump( total_data, open( parent_dir + sv_fn, "wb" ) )
-#total_data_load = pickle.load( open( parent_dir + 'breast_cancer_115n_1000iters', "rb" ) )
+#total_data_load = pickle.load( open( parent_dir + sv_fn, "rb" ) )
 
 '''
 f_TAL = pickle.load( open( '/media/seb/HD_Numba_Juan/Dropbox/postdoc/LSS_project/20_classic_datasets/f_TAL', "rb" ) )
