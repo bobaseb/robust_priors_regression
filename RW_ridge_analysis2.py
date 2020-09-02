@@ -183,6 +183,7 @@ def run_ridges(X_train,X_train_ttb,Y_train,X_test,X_test_ttb,Y_test,lam_bda,ttb_
         #print('TAL prior: ', B_logR_tally, tally_prior, log_tally_entropy)
         #print('TTB prior: ', B_logR_ttb, ttb_prior, ttb_prior0, np.abs(B_logR_ttb) * np.abs(ttb_prior0), log_ttb_entropy)
         #print('Zero prior: ', B_logR_normal, log_normal_entropy)
+        #print('Zero prior: ', lam_bda, log_normal_preds)
         return log_normal_acc, log_ttb_acc, log_tally_acc, all_preds, all_entropies
     elif optim_lambda=='TAL':
         _, log_tally_acc, _ = log_regress_p(X_i,X_test,Y_train,Y_test,lam_bda,tally_prior)
@@ -216,6 +217,7 @@ def neg_sigmoid(x):
 def g_inv(x,b):
     warning = 0
     term = -np.dot(x,b)
+    #print('TERM: ', term)
     #for term_i in term:
     #    if term_i > 700:
     #        term_i = 700
@@ -293,6 +295,8 @@ def log_regress_p(X_train,X_test,Y_train,Y_test,lam_bda,beta_zero):
     #print('ginv2')
     pred_probs, _ = g_inv(X_test,beta_new)
     #print('ginv3')
+    #print('lambda: ', lam_bda, 'beta_zero: ', beta_zero, 'beta_new: ', beta_new)
+    #print('PRED PROBS',pred_probs)
     preds = np.array(pred_probs>0.5,dtype=int)
     preds[preds==0] = -1
     #preds[pred_probs==0.5] = 0
@@ -398,14 +402,14 @@ def sim_data():
 rnd_seed = 333 #666 #101
 np.random.seed(rnd_seed)
 random.seed(rnd_seed)
-testing = 0 # -2 # -1 #         1,-1,0,2
+testing = -1 # 0 #  -2 #          1,-1,0,2
 permute_prior = 0
 #permute_ols = 0
 remove_zeros = 0
 v = 0
-niters_total = 1000 # 100 #
+niters_total = 1000 #   100 #
 optim_lambda = 0 #'TAL' #'TTB' #   needs to be 0 to avoid optimization
-sample_size = 50
+sample_size = 100
 sigma = 1.3
 #lambda_list = np.linspace(0.0001,0.1,num=50) #1000000000000 to converge
 #lambda_list = np.hstack([0, np.geomspace(1,1000,num=50)]) #1000000000000 = 1e+12 to converge
@@ -880,6 +884,7 @@ def get_stds(ds_num):
     ridge_tally = lambda_accs[:,2]
     return ridge_normal, ridge_ttb, ridge_tally, big3
 
+'''
 def get_plot():
     plt.rcParams["figure.figsize"] = (20,10)
     if testing == -1:
@@ -903,6 +908,89 @@ def get_plot():
             if testing != -1:
                 i += 1
     plt.subplots_adjust( hspace=0.36, wspace=0.2 , top=0.94 , left=0.07 , right=0.96 , bottom=0.03 )
+    plt.show()
+'''
+
+
+def get_plot():
+    plt.rcParams["figure.figsize"] = (20,10)
+    plt.rcParams.update({'font.size': 10})
+    plt.rc('xtick',labelsize=6)
+    plt.rc('ytick',labelsize=6)
+    fig, ax = plt.subplots(nrows=4, ncols=5)
+    fig.canvas.draw()
+    i = 0
+    for row in ax:
+        for col in row:
+            if i > 19:
+                continue
+            ridge_normal, ridge_ttb, ridge_tally, big3 = get_means(i)
+            ridge_normal_std, ridge_ttb_std, ridge_tally_std, big3_std = get_stds(i)
+            col.plot(0, big3[0], 'bo', label='OLS') #ols
+            #col.plot(1, big3[1], 'go', label='TTB') #ttb
+            #col.plot(2, big3[2], 'ro', label='TAL') #tally
+            col.plot(len(ridge_normal), big3[1], 'g*', label='TTB') #ttb
+            col.plot(len(ridge_normal), big3[2], 'r*', label='TAL') #tally
+            col.plot(lambda_list2[3:], ridge_normal, '-b', label="Zero prior")
+            col.plot(lambda_list2[3:], ridge_ttb, '-g', label="TTB prior")
+            col.plot(lambda_list2[3:], ridge_tally, '-r', label="TAL prior")
+            #col.plot(lambda_list2[3+np.argmax(ridge_tally)], ridge_tally[np.argmax(ridge_tally)], '*r', label="TAL prior *")
+            #col.plot(lambda_list2[3+np.argmax(ridge_ttb)], ridge_ttb[np.argmax(ridge_ttb)], '*g', label="TTB prior *")
+            #col.plot(lambda_list2[3+np.argmax(ridge_normal)], ridge_normal[np.argmax(ridge_normal)], '*b', label="Zero prior *")
+            col.set_title(ds_fn_list2[i])
+            shrink_std = 0.5
+            col.fill_between(lambda_list2[3:], ridge_normal - (ridge_normal_std*shrink_std), #ridge_conf[0], #
+            ridge_normal + (ridge_normal_std*shrink_std), alpha=0.1, color='b') #ridge_conf[1]
+            col.fill_between(lambda_list2[3:], ridge_ttb - (ridge_ttb_std*shrink_std),
+            ridge_ttb + (ridge_ttb_std*shrink_std), alpha=0.1, color='g')
+            col.fill_between(lambda_list2[3:], ridge_tally - (ridge_tally_std*shrink_std),
+            ridge_tally + (ridge_tally_std*shrink_std), alpha=0.1, color='r')
+            j = 0
+            for tick in col.xaxis.get_major_ticks():
+                tick.label.set_fontsize(6)
+                if i<15:
+                    tick.set_visible(False)
+                #else:
+                #    if j%2:
+                #        tick.set_visible(False)
+                # specify integer or one of preset strings, e.g.
+                #tick.label.set_fontsize('x-small')
+                tick.label.set_rotation(60)
+                j += 1
+            if i==4:
+                col.legend(loc='lower left', prop={'size': 4.5})
+            #print(np.argmax(ridge_tally), np.argmax(ridge_ttb))
+            #col.set_xlabel('Model/Penalty parameter', fontsize=12)
+            #col.set_ylabel('Accuracy', fontsize=16)
+            i += 1
+    #print(np.shape(ridge_tally), np.shape(ridge_ttb))
+    #exit()
+    plt.subplots_adjust( hspace=0.5, wspace=0.344 , top=0.94 , left=0.079 , right=0.89 , bottom=0.113 )
+    i = 0
+    for ax in fig.axes:
+        N_y = 5
+        ymin, ymax = ax.get_ylim()
+        ax.set_yticks(np.round(np.linspace(ymin, ymax, N_y), 2))
+        N_x = 8
+        if i==19:
+            N_x = 6
+        xmin, xmax = ax.get_xlim()
+        ax.set_xticks(np.round(np.linspace(xmin, xmax, N_x), 2))
+        #plt.sca(ax)
+        #plt.xticks(rotation=60)
+        for label in ax.get_xticklabels():
+            label.set_ha("right")
+            label.set_rotation(45)
+        i += 1
+    # Set common labels
+    fig.text(0.5, 0.02, 'Penalty parameter', ha='center', va='center', fontsize=18)
+    fig.text(0.03, 0.5, 'Accuracy', ha='center', va='center', rotation='vertical', fontsize=18)
+    # Shrink current axis by 20%
+    #box = ax.get_position()
+    #ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+    # Put a legend to the right of the current axis
+    #ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+    #fig.savefig(parent_dir + '20_ds_pngs/' + fn_20classic + '.png', bbox_inches='tight')
     plt.show()
 
 get_plot()
@@ -929,6 +1017,10 @@ def get_entropies():
             ols_entropies2 = np.mean(ols_entropies, axis=0)
             tally_entropies2 = np.mean(tally_entropies, axis=0)
             ttb_entropies2 = np.mean(ttb_entropies, axis=0)
+            shrink_std = 0.5
+            ols_entropies2_stds = np.std(ols_entropies, axis=0) * shrink_std
+            tally_entropies2_stds = np.std(tally_entropies, axis=0) * shrink_std
+            ttb_entropies2_stds = np.std(ttb_entropies, axis=0) * shrink_std
             col.plot(0, ols_entropies2[0], 'bo', label='OLS') #ols
             col.plot(lambda_list2[3:], ols_entropies2, '-b', label="Zero prior")
             col.plot(lambda_list2[3:], ttb_entropies2, '-g', label='TTB prior')
@@ -937,6 +1029,12 @@ def get_entropies():
             col.plot(len(lambda_list2[3:]), tally_entropies2[-1], 'r*', label='TAL') #tally
             col.set_title(ds_fn_list2[i])
             col.set_ylim(ymax = 1.05, ymin = 0)
+            col.fill_between(lambda_list2[3:], ols_entropies2 - ols_entropies2_stds, #ridge_conf[0], #
+            ols_entropies2 + ols_entropies2_stds, alpha=0.1, color='b') #ridge_conf[1]
+            col.fill_between(lambda_list2[3:], ttb_entropies2 - ttb_entropies2_stds,
+            ttb_entropies2 + ttb_entropies2_stds, alpha=0.1, color='g')
+            col.fill_between(lambda_list2[3:], tally_entropies2 - tally_entropies2_stds,
+            tally_entropies2 + tally_entropies2_stds, alpha=0.1, color='r')
             #col.set_xlabel('Model/Penalty parameter')
             #col.set_ylabel('Normalized \n entropy')
             #col.set_xticklabels(lambda_list2[3:], rotation=40)
@@ -956,7 +1054,7 @@ def get_entropies():
                 col.legend(loc='lower right', prop={'size': 4.5})
             if testing != -1 or testing != -2:
                 i += 1
-    fig.text(0.5, 0.02, 'Model/Penalty parameter', ha='center', va='center', fontsize=18)
+    fig.text(0.5, 0.02, 'Penalty parameter', ha='center', va='center', fontsize=18)
     fig.text(0.03, 0.5, 'Normalized entropy', ha='center', va='center', rotation='vertical', fontsize=18)
     plt.subplots_adjust( hspace=0.36, wspace=0.3 , top=0.94 , left=0.08 , right=0.96 , bottom=0.145 )
     plt.show()
@@ -1002,9 +1100,9 @@ def get_plot2(title, i):
     #fig.savefig(parent_dir + 'breast_cancer_data.png', bbox_inches='tight', dpi=300)
     plt.show()
 
-i = 15
+i = 0
 #get_plot2(ds_fn_list2[i] + ' (N = ' + str(sample_size) + ')', i)
-get_plot2(ds_fn_list2[i], i)
+#get_plot2(ds_fn_list2[i], i)
 
 def get_entropy2(title, i):
     ridge_normal, ridge_ttb, ridge_tally, big3 = get_means(i)
@@ -1051,9 +1149,9 @@ def get_entropy2(title, i):
     plt.ylabel('Normalized entropy', fontsize=16)
     plt.show()
 
-i = 13
+#i = 0 #13
 #get_entropy2(ds_fn_list2[i] + ' (N = ' + str(sample_size) + ')', i)
-get_entropy2(ds_fn_list2[i], i)
+#get_entropy2(ds_fn_list2[i], i)
 
 def get_worst_best(data, ds_num, accs=1):
     if accs:
@@ -1075,6 +1173,7 @@ def get_worst_best(data, ds_num, accs=1):
     b_ridge_tally_accs=[];w_ridge_tally_accs=[];
     b_ridge_permute_accs=[];w_ridge_permute_accs=[];
     all_ridge_accs=[];all_ridge_ttb_accs=[];all_ridge_tally_accs=[];
+    lambda_ids=[]
     for i in range(niters_total): #0 normal, 1 ttb, 2 tal #.argmax()
         b_ridge_accs.append(total_ds_accs[i][ds_num][0][ridge_normal.argmax(),cols[0]])
         w_ridge_accs.append(total_ds_accs[i][ds_num][0][ridge_normal.argmin(),cols[0]])
@@ -1085,11 +1184,13 @@ def get_worst_best(data, ds_num, accs=1):
         b_ridge_tally_accs.append(total_ds_accs[i][ds_num][0][ridge_tally.argmax(),cols[2]])
         w_ridge_tally_accs.append(total_ds_accs[i][ds_num][0][ridge_tally.argmin(),cols[2]])
         all_ridge_tally_accs.append(total_ds_accs[i][ds_num][0][:,cols[2]])
+        #print(total_ds_accs[i][ds_num][0][:,cols[2]])
+        lambda_ids.append(np.arange(len(lambda_list)))
         if accs:
             b_ridge_permute_accs.append(total_permute_ols_accs[i][ds_num][ridge_normal_permute.argmax()])
             w_ridge_permute_accs.append(total_permute_ols_accs[i][ds_num][ridge_normal_permute.argmin()])
     return b_ridge_accs, w_ridge_accs, b_ridge_ttb_accs, w_ridge_ttb_accs, b_ridge_tally_accs, w_ridge_tally_accs, b_ridge_permute_accs, w_ridge_permute_accs, \
-    np.array(all_ridge_accs).flatten(), np.array(all_ridge_ttb_accs).flatten(), np.array(all_ridge_tally_accs).flatten()
+    np.array(all_ridge_accs).flatten(), np.array(all_ridge_ttb_accs).flatten(), np.array(all_ridge_tally_accs).flatten(), lambda_ids
 
 def get_plot2_violin(all_ds=0, accs=1):
     if accs:
@@ -1108,7 +1209,7 @@ def get_plot2_violin(all_ds=0, accs=1):
         for ds_num in range(len(ds_fn_list)):
             b_ridge_accs0, w_ridge_accs0, b_ridge_ttb_accs0, w_ridge_ttb_accs0, b_ridge_tally_accs0, \
             w_ridge_tally_accs0, b_ridge_permute_accs0, w_ridge_permute_accs0, \
-            all_ridge_accs0, all_ridge_ttb_accs0, all_ridge_tally_accs0 = get_worst_best(data, ds_num, accs=accs)
+            all_ridge_accs0, all_ridge_ttb_accs0, all_ridge_tally_accs0, lambda_ids = get_worst_best(data, ds_num, accs=accs)
             b_ridge_accs.append(b_ridge_accs0); w_ridge_accs.append(w_ridge_accs0);
             b_ridge_ttb_accs.append(b_ridge_ttb_accs0); w_ridge_ttb_accs.append(w_ridge_ttb_accs0);
             b_ridge_tally_accs.append(b_ridge_tally_accs0); w_ridge_tally_accs.append(w_ridge_tally_accs0);
@@ -1129,7 +1230,8 @@ def get_plot2_violin(all_ds=0, accs=1):
         ds_num = 0
         b_ridge_accs, w_ridge_accs, b_ridge_ttb_accs, w_ridge_ttb_accs, b_ridge_tally_accs, \
         w_ridge_tally_accs, b_ridge_permute_accs, w_ridge_permute_accs, \
-        all_ridge_accs, all_ridge_ttb_accs, all_ridge_tally_accs = get_worst_best(data, ds_num, accs=accs)
+        all_ridge_accs, all_ridge_ttb_accs, all_ridge_tally_accs, lambda_ids = get_worst_best(data, ds_num, accs=accs)
+        lambda_ids = np.array(lambda_ids).flatten()
     b_ridge_normal_data = np.hstack([np.tile('Best \n Zero Prior',(vector_size,1)),np.array([b_ridge_accs]).T])
     w_ridge_normal_data = np.hstack([np.tile('Worst \n Zero Prior',(vector_size,1)),np.array([w_ridge_accs]).T])
     b_ridge_ttb_data = np.hstack([np.tile('Best \n TTB Prior',(vector_size,1)),np.array([b_ridge_ttb_accs]).T])
@@ -1182,10 +1284,17 @@ def get_plot2_violin(all_ds=0, accs=1):
     else:
         ylabel = 'Normalized \n entropy'
     df = pd.DataFrame(data,columns=['Model',ylabel,'Model2'])
-    ds_num_vec3 = np.hstack([np.tile(np.array(ds_num_vec).flatten(),len(df.Model.unique())-3), np.tile(np.array(ds_num_vec2).flatten(),3)])
-    df['ds_num'] = ds_num_vec3
     df[ylabel] = pd.to_numeric(df[ylabel], downcast="float", errors='coerce')
-    df2 = df.groupby(['ds_num','Model','Model2'], as_index=False).mean()
+    if all_ds:
+        ds_num_vec3 = np.hstack([np.tile(np.array(ds_num_vec).flatten(),len(df.Model.unique())-3), np.tile(np.array(ds_num_vec2).flatten(),3)])
+        df['ds_num'] = ds_num_vec3
+        df2 = df.groupby(['ds_num','Model','Model2'], as_index=False).mean()
+    else:
+        if accs:
+            df2 = df
+        else:
+            df['lambda_ids'] = np.hstack([np.tile(range(niters_total),len(df.Model.unique())-3), np.tile(lambda_ids,3)]) #idx for niter on best/worst models
+            df2 = df.groupby(['lambda_ids', 'Model','Model2'], as_index=False).mean()
     plt.rcParams["figure.figsize"] = (20,10)
     fig, ax = plt.subplots()
     # We need to draw the canvas, otherwise the labels won't be positioned and
@@ -1201,7 +1310,8 @@ def get_plot2_violin(all_ds=0, accs=1):
     plt.tight_layout()
     plt.show()
 
-get_plot2_violin(all_ds=1, accs=0)
+#get_plot2_violin(all_ds=1, accs=0)
+#get_plot2_violin(all_ds=0, accs=0)
 
 #get_plot2()
 #plt.close()
